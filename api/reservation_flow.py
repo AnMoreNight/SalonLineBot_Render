@@ -270,25 +270,43 @@ class ReservationFlow:
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
         # Extract time from message
-        time_match = re.search(r'(\d{1,2}):?(\d{2})?', message)
-        if not time_match:
-            return "時間を正しく入力してください（例：14:00、15時など）"
-        
-        hour_str = time_match.group(1)
-        minute_str = time_match.group(2)
-        if hour_str is None or (minute_str is not None and minute_str.strip() == ""):
-            return "時間を正しく入力してください（例：14:00、15時など）"
-        try:
-            hour = int(hour_str)
-            minute = int(minute_str) if minute_str else 0
-        except (TypeError, ValueError):
-            return "時間を正しく入力してください（例：14:00、15時など）"
-        selected_time = f"{hour:02d}:{minute:02d}"
-        
-        # Check if time is available
+        # 新しいロジック: 利用可能な時間帯リストから完全一致または部分一致で選択
         selected_date = self.user_states[user_id]["data"]["date"]
         available_times = [slot["time"] for slot in self.available_slots 
                          if slot["date"] == selected_date and slot["available"]]
+
+        # ユーザーの入力を正規化
+        normalized_message = message.replace("時", ":00").replace("：", ":").strip()
+        # 例: "15時"→"15:00", "14：30"→"14:30"
+
+        # 完全一致をまず探す
+        if normalized_message in available_times:
+            selected_time = normalized_message
+        else:
+            # 部分一致（例: "15"→"15:00"）や"15時"→"15:00"も考慮
+            matched_time = None
+            for t in available_times:
+                if normalized_message in t or t in normalized_message:
+                    matched_time = t
+                    break
+            if matched_time:
+                selected_time = matched_time
+            else:
+                # さらに「15」や「15時」など数字だけの入力も考慮
+                digit_match = re.match(r'^(\d{1,2})$', normalized_message)
+                if digit_match:
+                    candidate = f"{int(digit_match.group(1)):02d}:00"
+                    if candidate in available_times:
+                        selected_time = candidate
+                    else:
+                        return "ご希望の時間が空いていません。上記の空き時間からお選びください。"
+                else:
+                    return "時間を正しく入力してください（例：14:00、15時など）"
+        
+        # # Check if time is available
+        # selected_date = self.user_states[user_id]["data"]["date"]
+        # available_times = [slot["time"] for slot in self.available_slots 
+        #                  if slot["date"] == selected_date and slot["available"]]
         
         if selected_time not in available_times:
             return "申し訳ございませんが、その時間は既に予約が入っています。他の時間をお選びください。"
@@ -395,9 +413,3 @@ class ReservationFlow:
         except Exception as e:
             logging.error(f"Failed to get LINE display name: {e}")
             return "お客様"  # Fallback name
-
-
-if __name__ == "__main__":
-    time_match = re.search(r'(\d{1,2}):?(\d{2})?', "10 10")
-    print(time_match.group(1))
-    print(time_match.group(2))
