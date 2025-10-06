@@ -12,19 +12,19 @@ class ReservationFlow:
     def __init__(self):
         self.user_states = {}  # Store user reservation states
         self.available_slots = self._generate_sample_slots()
-        # self.services = {
-        #     "カット": {"duration": 60, "price": 3000},
-        #     "カラー": {"duration": 120, "price": 8000},
-        #     "パーマ": {"duration": 150, "price": 12000},
-        #     "トリートメント": {"duration": 90, "price": 5000}
-        # }
-        # self.staff_members = {
-        #     "田中": {"specialty": "カット・カラー", "experience": "5年"},
-        #     "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
-        #     "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
-        #     "未指定": {"specialty": "全般", "experience": "担当者決定"}
-        # }
-        # self.completed_reservations = []  # Store completed reservations for calendar integration
+        self.services = {
+            "カット": {"duration": 60, "price": 3000},
+            "カラー": {"duration": 120, "price": 8000},
+            "パーマ": {"duration": 150, "price": 12000},
+            "トリートメント": {"duration": 90, "price": 5000}
+        }
+        self.staff_members = {
+            "田中": {"specialty": "カット・カラー", "experience": "5年"},
+            "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
+            "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
+            "未指定": {"specialty": "全般", "experience": "担当者決定"}
+        }
+        self.completed_reservations = []  # Store completed reservations for calendar integration
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
     
@@ -269,54 +269,77 @@ class ReservationFlow:
     
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
+        # Check for cancellation first
+        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+            del self.user_states[user_id]
+            return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
         selected_date = self.user_states[user_id]["data"]["date"]
         available_times = [slot["time"] for slot in self.available_slots 
                          if slot["date"] == selected_date and slot["available"]]
 
-        # ユーザーの入力を正規化
-        # 例: "15時"→"15:00", "14：30"→"14:30"
+        # Normalize the input message
         normalized_message = message.strip()
-        # まず「時」だけで終わる場合（例: "15時"）を「:00」に変換
-        normalized_message = re.sub(r"^(\d{1,2})時$", r"\1:00", normalized_message)
-        # 全角コロンを半角に
-        normalized_message = normalized_message.replace("：", ":")
-        # さらに「時」が途中にある場合（例: "15時30分"）は「:」に変換
-        normalized_message = re.sub(r"(\d{1,2})時(\d{1,2})分?", r"\1:\2", normalized_message)
-        # 「分」だけがついている場合（例: "15:30分"）は「分」を除去
-        normalized_message = re.sub(r"分", "", normalized_message)
-        normalized_message = normalized_message.strip()
+        
+        # Check if input is a valid time format
+        is_valid_time = False
+        selected_time = None
+        
+        # Convert various time formats to standard HH:MM format
+        # Handle "10時" -> "10:00"
+        if re.match(r'^(\d{1,2})時$', normalized_message):
+            hour = int(re.match(r'^(\d{1,2})時$', normalized_message).group(1))
+            if 0 <= hour <= 23:
+                normalized_message = f"{hour:02d}:00"
+                is_valid_time = True
+        # Handle "10時30分" -> "10:30"
+        elif re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message):
+            match = re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message)
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                normalized_message = f"{hour:02d}:{minute:02d}"
+                is_valid_time = True
+        # Handle "10" -> "10:00"
+        elif re.match(r'^(\d{1,2})$', normalized_message):
+            hour = int(re.match(r'^(\d{1,2})$', normalized_message).group(1))
+            if 0 <= hour <= 23:
+                normalized_message = f"{hour:02d}:00"
+                is_valid_time = True
+        # Handle "10:30" or "10:30分" -> "10:30"
+        elif re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message):
+            match = re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message)
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                normalized_message = f"{hour:02d}:{minute:02d}"
+                is_valid_time = True
+        # Handle "10：30" (full-width colon)
+        elif re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message):
+            match = re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message)
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                normalized_message = f"{hour:02d}:{minute:02d}"
+                is_valid_time = True
+        
+        # If input is not a valid time format, return error message
+        if not is_valid_time:
+            return """時間の入力形式が正しくありません。
 
-        # 完全一致をまず探す
+正しい入力例：
+・10時
+・15時30分
+・14:00
+・9
+
+上記の空き時間からお選びください。"""
+
+        # Check if the normalized time is available
         if normalized_message in available_times:
             selected_time = normalized_message
         else:
-            # 部分一致（例: "15"→"15:00"）や"15時"→"15:00"も考慮
-            matched_time = None
-            for t in available_times:
-                if normalized_message in t or t in normalized_message:
-                    matched_time = t
-                    break
-            if matched_time:
-                selected_time = matched_time
-            else:
-                # さらに「15」や「15時」など数字だけの入力も考慮
-                digit_match = re.match(r'^(\d{1,2})$', normalized_message)
-                if digit_match:
-                    candidate = f"{int(digit_match.group(1)):02d}:00"
-                    if candidate in available_times:
-                        selected_time = candidate
-                    else:
-                        return "ご希望の時間が空いていません。上記の空き時間からお選びください。"
-                else:
-                    return "時間を正しく入力してください（例：14:00、15時など）"
-        
-        # # Check if time is available
-        # selected_date = self.user_states[user_id]["data"]["date"]
-        # available_times = [slot["time"] for slot in self.available_slots 
-        #                  if slot["date"] == selected_date and slot["available"]]
-        
-        if selected_time not in available_times:
-            return "申し訳ございませんが、その時間は既に予約が入っています。他の時間をお選びください。"
+            return f"申し訳ございませんが、{normalized_message}は空いていません。上記の空き時間からお選びください。"
         
         self.user_states[user_id]["data"]["time"] = selected_time
         self.user_states[user_id]["step"] = "confirmation"
@@ -357,14 +380,14 @@ class ReservationFlow:
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
             
-            # # Store completed reservation for logging
-            # self.completed_reservations.append({
-            #     'user_id': user_id,
-            #     'reservation_data': reservation_data,
-            #     'client_name': client_name,
-            #     'calendar_success': calendar_success,
-            #     'timestamp': datetime.now().isoformat()
-            # })
+            # Store completed reservation for logging
+            self.completed_reservations.append({
+                'user_id': user_id,
+                'reservation_data': reservation_data,
+                'client_name': client_name,
+                'calendar_success': calendar_success,
+                'timestamp': datetime.now().isoformat()
+            })
             
             return f"""✅ 予約が確定いたしました！
 
@@ -396,11 +419,11 @@ class ReservationFlow:
         else:
             return None  # Let other systems handle this
     
-    # def get_completed_reservations(self) -> List[Dict[str, Any]]:
-    #     """Get and clear completed reservations for calendar integration"""
-    #     completed = self.completed_reservations.copy()
-    #     self.completed_reservations.clear()
-    #     return completed
+    def get_completed_reservations(self) -> List[Dict[str, Any]]:
+        """Get and clear completed reservations for calendar integration"""
+        completed = self.completed_reservations.copy()
+        self.completed_reservations.clear()
+        return completed
     
     def set_line_configuration(self, configuration):
         """Set LINE configuration for getting display names"""
