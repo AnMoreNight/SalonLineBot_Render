@@ -24,7 +24,7 @@ class ReservationFlow:
         #     "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
         #     "未指定": {"specialty": "全般", "experience": "担当者決定"}
         # }
-        self.completed_reservations = []  # Store completed reservations for calendar integration
+        # self.completed_reservations = []  # Store completed reservations for calendar integration
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
     
@@ -325,14 +325,14 @@ class ReservationFlow:
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
             
-            # Store completed reservation for logging
-            self.completed_reservations.append({
-                'user_id': user_id,
-                'reservation_data': reservation_data,
-                'client_name': client_name,
-                'calendar_success': calendar_success,
-                'timestamp': datetime.now().isoformat()
-            })
+            # # Store completed reservation for logging
+            # self.completed_reservations.append({
+            #     'user_id': user_id,
+            #     'reservation_data': reservation_data,
+            #     'client_name': client_name,
+            #     'calendar_success': calendar_success,
+            #     'timestamp': datetime.now().isoformat()
+            # })
             
             return f"""✅ 予約が確定いたしました！
 
@@ -353,22 +353,22 @@ class ReservationFlow:
             return self.handle_reservation_flow(user_id, message)
         elif intent == "reservation_flow":
             return self.handle_reservation_flow(user_id, message)
-        elif intent == "service_selection":
-            # This should only happen during reservation flow
-            return self.handle_reservation_flow(user_id, message)
-        elif intent == "staff_selection":
-            # This should only happen during reservation flow
-            return self.handle_reservation_flow(user_id, message)
+        # elif intent == "service_selection":
+        #     # This should only happen during reservation flow
+        #     return self.handle_reservation_flow(user_id, message)
+        # elif intent == "staff_selection":
+        #     # This should only happen during reservation flow
+        #     return self.handle_reservation_flow(user_id, message)
         elif intent == "cancel":
             return "予約のキャンセルについてですね。お電話でお問い合わせください。"
         else:
             return None  # Let other systems handle this
     
-    def get_completed_reservations(self) -> List[Dict[str, Any]]:
-        """Get and clear completed reservations for calendar integration"""
-        completed = self.completed_reservations.copy()
-        self.completed_reservations.clear()
-        return completed
+    # def get_completed_reservations(self) -> List[Dict[str, Any]]:
+    #     """Get and clear completed reservations for calendar integration"""
+    #     completed = self.completed_reservations.copy()
+    #     self.completed_reservations.clear()
+    #     return completed
     
     def set_line_configuration(self, configuration):
         """Set LINE configuration for getting display names"""
