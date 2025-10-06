@@ -274,8 +274,15 @@ class ReservationFlow:
         if not time_match:
             return "時間を正しく入力してください（例：14:00、15時など）"
         
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2)) if time_match.group(2) else 0
+        hour_str = time_match.group(1)
+        minute_str = time_match.group(2)
+        if hour_str is None or (minute_str is not None and minute_str.strip() == ""):
+            return "時間を正しく入力してください（例：14:00、15時など）"
+        try:
+            hour = int(hour_str)
+            minute = int(minute_str) if minute_str else 0
+        except (TypeError, ValueError):
+            return "時間を正しく入力してください（例：14:00、15時など）"
         selected_time = f"{hour:02d}:{minute:02d}"
         
         # Check if time is available
@@ -388,3 +395,9 @@ class ReservationFlow:
         except Exception as e:
             logging.error(f"Failed to get LINE display name: {e}")
             return "お客様"  # Fallback name
+
+
+if __name__ == "__main__":
+    time_match = re.search(r'(\d{1,2}):?(\d{2})?', "10 10")
+    print(time_match.group(1))
+    print(time_match.group(2))
