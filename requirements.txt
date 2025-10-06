@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+line-bot-sdk
+python-dotenv
+openai
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
