@@ -74,15 +74,15 @@ class ReservationFlow:
             "空いてる", "空き", "時間", "いつ", "可能"
         ]
         
-        # Service selection keywords (direct service names)
-        service_selection_keywords = [
-            "カット", "カラー", "パーマ", "トリートメント"
-        ]
+        # # Service selection keywords (direct service names)
+        # service_selection_keywords = [
+        #     "カット", "カラー", "パーマ", "トリートメント"
+        # ]
         
-        # Staff selection keywords
-        staff_selection_keywords = [
-            "田中", "佐藤", "山田", "未指定", "担当者", "美容師"
-        ]
+        # # Staff selection keywords
+        # staff_selection_keywords = [
+        #     "田中", "佐藤", "山田", "未指定", "担当者", "美容師"
+        # ]
         
         # Cancel intent keywords
         cancel_keywords = [
@@ -92,10 +92,10 @@ class ReservationFlow:
         # Priority order: reservation > service_selection > staff_selection > cancel
         if any(keyword in message_lower for keyword in reservation_keywords):
             return "reservation"
-        elif any(keyword in message_lower for keyword in service_selection_keywords):
-            return "service_selection"
-        elif any(keyword in message_lower for keyword in staff_selection_keywords):
-            return "staff_selection"
+        # elif any(keyword in message_lower for keyword in service_selection_keywords):
+        #     return "service_selection"
+        # elif any(keyword in message_lower for keyword in staff_selection_keywords):
+        #     return "staff_selection"
         elif any(keyword in message_lower for keyword in cancel_keywords):
             return "cancel"
         else:
@@ -146,6 +146,11 @@ class ReservationFlow:
     
     def _handle_service_selection(self, user_id: str, message: str) -> str:
         """Handle service selection"""
+        # Check for cancellation first
+        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+            del self.user_states[user_id]
+            return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
         selected_service = None
         message_lower = message.lower()
         
@@ -186,6 +191,11 @@ class ReservationFlow:
     
     def _handle_staff_selection(self, user_id: str, message: str) -> str:
         """Handle staff selection"""
+        # Check for cancellation first
+        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+            del self.user_states[user_id]
+            return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
         selected_staff = None
         message_lower = message.lower()
         
@@ -210,7 +220,10 @@ class ReservationFlow:
         self.user_states[user_id]["data"]["staff"] = selected_staff
         self.user_states[user_id]["step"] = "date_selection"
         
-        return f"""{selected_staff}さんですね！
+        # Add "さん" only for specific staff members, not for "未指定"
+        staff_display = f"{selected_staff}さん" if selected_staff != "未指定" else selected_staff
+        
+        return f"""{staff_display}ですね！
 ご希望の日付をお選びください。
 
 今週の空いている日：
