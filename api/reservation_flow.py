@@ -12,18 +12,18 @@ class ReservationFlow:
     def __init__(self):
         self.user_states = {}  # Store user reservation states
         self.available_slots = self._generate_sample_slots()
-        self.services = {
-            "カット": {"duration": 60, "price": 3000},
-            "カラー": {"duration": 120, "price": 8000},
-            "パーマ": {"duration": 150, "price": 12000},
-            "トリートメント": {"duration": 90, "price": 5000}
-        }
-        self.staff_members = {
-            "田中": {"specialty": "カット・カラー", "experience": "5年"},
-            "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
-            "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
-            "未指定": {"specialty": "全般", "experience": "担当者決定"}
-        }
+        # self.services = {
+        #     "カット": {"duration": 60, "price": 3000},
+        #     "カラー": {"duration": 120, "price": 8000},
+        #     "パーマ": {"duration": 150, "price": 12000},
+        #     "トリートメント": {"duration": 90, "price": 5000}
+        # }
+        # self.staff_members = {
+        #     "田中": {"specialty": "カット・カラー", "experience": "5年"},
+        #     "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
+        #     "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
+        #     "未指定": {"specialty": "全般", "experience": "担当者決定"}
+        # }
         self.completed_reservations = []  # Store completed reservations for calendar integration
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
@@ -58,14 +58,14 @@ class ReservationFlow:
             state = self.user_states[user_id]
             step = state["step"]
             
-            # During service selection step, service keywords mean service selection
-            if step == "service_selection":
-                service_keywords = ["カット", "カラー", "パーマ", "トリートメント"]
-                if any(keyword in message_lower for keyword in service_keywords):
-                    return "service_selection"
+            # # During service selection step, service keywords mean service selection
+            # if step == "service_selection":
+            #     service_keywords = ["カット", "カラー", "パーマ", "トリートメント"]
+            #     if any(keyword in message_lower for keyword in service_keywords):
+            #         return "service_selection"
             
             # During other reservation steps, treat as reservation flow
-            if step in ["date_selection", "time_selection", "confirmation"]:
+            if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
         
         # Reservation intent keywords (only when not in flow)
