@@ -35,10 +35,10 @@ class ReservationFlow:
         
         for day in range(7):  # Next 7 days
             date = base_date + timedelta(days=day)
-            if date.weekday() == 1:  # Skip Tuesday (holiday)
-                continue
+            # if date.weekday() == 1:  # Skip Tuesday (holiday)
+            #     continue
                 
-            for hour in range(10, 19):  # 10:00 to 18:00
+            for hour in range(9, 18):  # 9:00 to 18:00
                 if hour == 12:  # Skip lunch break
                     continue
                 slots.append({
@@ -261,7 +261,7 @@ class ReservationFlow:
         return f"""{selected_date}ですね！
 空いている時間帯は以下の通りです：
 
-{chr(10).join([f"・{time}" for time in available_times[:5]])}
+{chr(10).join([f"・{time}" for time in available_times])}
 
 ご希望の時間をお送りください。
 
@@ -269,15 +269,22 @@ class ReservationFlow:
     
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
-        # Extract time from message
-        # 新しいロジック: 利用可能な時間帯リストから完全一致または部分一致で選択
         selected_date = self.user_states[user_id]["data"]["date"]
         available_times = [slot["time"] for slot in self.available_slots 
                          if slot["date"] == selected_date and slot["available"]]
 
         # ユーザーの入力を正規化
-        normalized_message = message.replace("時", ":00").replace("：", ":").strip()
         # 例: "15時"→"15:00", "14：30"→"14:30"
+        normalized_message = message.strip()
+        # まず「時」だけで終わる場合（例: "15時"）を「:00」に変換
+        normalized_message = re.sub(r"^(\d{1,2})時$", r"\1:00", normalized_message)
+        # 全角コロンを半角に
+        normalized_message = normalized_message.replace("：", ":")
+        # さらに「時」が途中にある場合（例: "15時30分"）は「:」に変換
+        normalized_message = re.sub(r"(\d{1,2})時(\d{1,2})分?", r"\1:\2", normalized_message)
+        # 「分」だけがついている場合（例: "15:30分"）は「分」を除去
+        normalized_message = re.sub(r"分", "", normalized_message)
+        normalized_message = normalized_message.strip()
 
         # 完全一致をまず探す
         if normalized_message in available_times:
@@ -330,7 +337,7 @@ class ReservationFlow:
 「はい」または「確定」とお送りください。
 
 ※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
-    
+
     def _handle_confirmation(self, user_id: str, message: str) -> str:
         """Handle final confirmation"""
         if "はい" in message or "確定" in message or "お願い" in message:
