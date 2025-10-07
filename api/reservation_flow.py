@@ -14,6 +14,20 @@ class ReservationFlow:
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
         
+        # Service and staff data for confirmation
+        self.services = {
+            "カット": {"duration": 60, "price": 3000},
+            "カラー": {"duration": 120, "price": 8000},
+            "パーマ": {"duration": 150, "price": 12000},
+            "トリートメント": {"duration": 90, "price": 5000}
+        }
+        self.staff_members = {
+            "田中": {"specialty": "カット・カラー", "experience": "5年"},
+            "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
+            "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
+            "未指定": {"specialty": "全般", "experience": "担当者決定"}
+        }
+    
     def _get_available_slots(self, start_date: datetime = None, days_ahead: int = 7) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar"""
         if start_date is None:
