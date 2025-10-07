@@ -11,43 +11,16 @@ from api.google_calendar import GoogleCalendarHelper
 class ReservationFlow:
     def __init__(self):
         self.user_states = {}  # Store user reservation states
-        self.available_slots = self._generate_sample_slots()
-        self.services = {
-            "カット": {"duration": 60, "price": 3000},
-            "カラー": {"duration": 120, "price": 8000},
-            "パーマ": {"duration": 150, "price": 12000},
-            "トリートメント": {"duration": 90, "price": 5000}
-        }
-        self.staff_members = {
-            "田中": {"specialty": "カット・カラー", "experience": "5年"},
-            "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
-            "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
-            "未指定": {"specialty": "全般", "experience": "担当者決定"}
-        }
-        self.completed_reservations = []  # Store completed reservations for calendar integration
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
-    
-    def _generate_sample_slots(self) -> List[Dict[str, Any]]:
-        """Generate sample available time slots"""
-        slots = []
-        base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        for day in range(7):  # Next 7 days
-            date = base_date + timedelta(days=day)
-            # if date.weekday() == 1:  # Skip Tuesday (holiday)
-            #     continue
-                
-            for hour in range(9, 18):  # 9:00 to 18:00
-                if hour == 12:  # Skip lunch break
-                    continue
-                slots.append({
-                    "date": date.strftime("%Y-%m-%d"),
-                    "time": f"{hour:02d}:00",
-                    "available": True
-                })
+    def _get_available_slots(self, start_date: datetime = None, days_ahead: int = 7) -> List[Dict[str, Any]]:
+        """Get available time slots from Google Calendar"""
+        if start_date is None:
+            start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        return slots
+        end_date = start_date + timedelta(days=days_ahead)
+        return self.google_calendar.get_available_slots(start_date, end_date)
     
     def detect_intent(self, message: str, user_id: str = None) -> str:
         """Detect user intent from message with context awareness"""
@@ -57,12 +30,6 @@ class ReservationFlow:
         if user_id and user_id in self.user_states:
             state = self.user_states[user_id]
             step = state["step"]
-            
-            # # During service selection step, service keywords mean service selection
-            # if step == "service_selection":
-            #     service_keywords = ["カット", "カラー", "パーマ", "トリートメント"]
-            #     if any(keyword in message_lower for keyword in service_keywords):
-            #         return "service_selection"
             
             # During other reservation steps, treat as reservation flow
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
@@ -74,28 +41,21 @@ class ReservationFlow:
             "空いてる", "空き", "時間", "いつ", "可能"
         ]
         
-        # # Service selection keywords (direct service names)
-        # service_selection_keywords = [
-        #     "カット", "カラー", "パーマ", "トリートメント"
-        # ]
-        
-        # # Staff selection keywords
-        # staff_selection_keywords = [
-        #     "田中", "佐藤", "山田", "未指定", "担当者", "美容師"
-        # ]
-        
         # Cancel intent keywords
         cancel_keywords = [
-            "キャンセル", "取り消し", "予約変更", "変更"
+            "キャンセル", "取り消し", "やめる", "中止"
         ]
         
-        # Priority order: reservation > service_selection > staff_selection > cancel
+        # Modify intent keywords
+        modify_keywords = [
+            "予約変更", "変更", "修正", "時間変更", "日時変更", "予約修正"
+        ]
+        
+        # Priority order: reservation > service_selection > staff_selection > modify > cancel
         if any(keyword in message_lower for keyword in reservation_keywords):
             return "reservation"
-        # elif any(keyword in message_lower for keyword in service_selection_keywords):
-        #     return "service_selection"
-        # elif any(keyword in message_lower for keyword in staff_selection_keywords):
-        #     return "staff_selection"
+        elif any(keyword in message_lower for keyword in modify_keywords):
+            return "modify"
         elif any(keyword in message_lower for keyword in cancel_keywords):
             return "cancel"
         else:
@@ -237,6 +197,11 @@ class ReservationFlow:
     
     def _handle_date_selection(self, user_id: str, message: str) -> str:
         """Handle date selection"""
+        # Check for cancellation first
+        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+            del self.user_states[user_id]
+            return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
         # Simple date parsing (in real implementation, use proper date parsing)
         if "明日" in message:
             selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -254,9 +219,13 @@ class ReservationFlow:
         self.user_states[user_id]["data"]["date"] = selected_date
         self.user_states[user_id]["step"] = "time_selection"
         
-        # Get available times for selected date
-        available_times = [slot["time"] for slot in self.available_slots 
+        # Get available times for selected date from Google Calendar
+        available_slots = self._get_available_slots()
+        available_times = [slot["time"] for slot in available_slots 
                           if slot["date"] == selected_date and slot["available"]]
+        
+        if not available_times:
+            return f"申し訳ございませんが、{selected_date}は空いている時間がありません。他の日付をお選びください。"
         
         return f"""{selected_date}ですね！
 空いている時間帯は以下の通りです：
@@ -275,7 +244,8 @@ class ReservationFlow:
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         selected_date = self.user_states[user_id]["data"]["date"]
-        available_times = [slot["time"] for slot in self.available_slots 
+        available_slots = self._get_available_slots()
+        available_times = [slot["time"] for slot in available_slots 
                          if slot["date"] == selected_date and slot["available"]]
 
         # Normalize the input message
@@ -379,16 +349,7 @@ class ReservationFlow:
             
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
-            
-            # Store completed reservation for logging
-            self.completed_reservations.append({
-                'user_id': user_id,
-                'reservation_data': reservation_data,
-                'client_name': client_name,
-                'calendar_success': calendar_success,
-                'timestamp': datetime.now().isoformat()
-            })
-            
+           
             return f"""✅ 予約が確定いたしました！
 
 📅 日時：{reservation_data['date']} {reservation_data['time']}
@@ -408,23 +369,13 @@ class ReservationFlow:
             return self.handle_reservation_flow(user_id, message)
         elif intent == "reservation_flow":
             return self.handle_reservation_flow(user_id, message)
-        # elif intent == "service_selection":
-        #     # This should only happen during reservation flow
-        #     return self.handle_reservation_flow(user_id, message)
-        # elif intent == "staff_selection":
-        #     # This should only happen during reservation flow
-        #     return self.handle_reservation_flow(user_id, message)
+        elif intent == "modify":
+            return self._handle_modify_request(user_id, message)
         elif intent == "cancel":
-            return "予約のキャンセルについてですね。お電話でお問い合わせください。"
+            return self._handle_cancel_request(user_id)
         else:
             return None  # Let other systems handle this
-    
-    def get_completed_reservations(self) -> List[Dict[str, Any]]:
-        """Get and clear completed reservations for calendar integration"""
-        completed = self.completed_reservations.copy()
-        self.completed_reservations.clear()
-        return completed
-    
+
     def set_line_configuration(self, configuration):
         """Set LINE configuration for getting display names"""
         self.line_configuration = configuration
@@ -443,3 +394,77 @@ class ReservationFlow:
         except Exception as e:
             logging.error(f"Failed to get LINE display name: {e}")
             return "お客様"  # Fallback name
+
+    def _handle_cancel_request(self, user_id: str) -> str:
+        """Cancel existing calendar reservation for the user if present."""
+        client_name = self._get_line_display_name(user_id)
+        try:
+            success = self.google_calendar.cancel_reservation(client_name)
+            if success:
+                return "ご予約のキャンセルを承りました。\nまたのご利用をお待ちしております。"
+            else:
+                return "現在、登録されているご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
+        except Exception as e:
+            logging.error(f"Cancel request failed: {e}")
+            return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
+
+    def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
+        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM.
+        Returns dict with keys 'date' and 'time' if both found, else None.
+        """
+        text = text.strip()
+        # Try pattern: 2025-10-07 14:30
+        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})", text)
+        if match:
+            date_part = match.group(1)
+            hour = int(match.group(2))
+            minute = int(match.group(3))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
+
+        # Try Japanese style like "10月7日 14時30分" → require conversion; keep simple for now
+        match2 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2})時(\d{1,2})?分?", text)
+        if match2:
+            y = int(match2.group(1))
+            m = int(match2.group(2))
+            d = int(match2.group(3))
+            hh = int(match2.group(4))
+            mm = int(match2.group(5) or 0)
+            if 1 <= m <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
+                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}"}
+
+        return None
+
+    def _handle_modify_request(self, user_id: str, message: str) -> str:
+        """Modify existing reservation time via Google Calendar.
+
+        Conversation flow:
+        - If we don't yet have new date/time, ask for it in the format "YYYY-MM-DD HH:MM".
+        - Once received, perform modification on the user's upcoming reservation.
+        """
+        state = self.user_states.get(user_id)
+        if not state or state.get("step") not in ["modify_waiting", "modify_provide_time"]:
+            # Start modify flow
+            self.user_states[user_id] = {"step": "modify_waiting"}
+            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
+
+        # Try to parse date/time from message
+        parsed = self._parse_datetime_from_text(message)
+        if not parsed:
+            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
+
+        new_date = parsed["date"]
+        new_time = parsed["time"]
+        client_name = self._get_line_display_name(user_id)
+        try:
+            success = self.google_calendar.modify_reservation_time(client_name, new_date, new_time)
+            # Clear temporary modify state
+            if user_id in self.user_states and self.user_states[user_id].get("step","") in ["modify_waiting", "modify_provide_time"]:
+                del self.user_states[user_id]
+            if success:
+                return f"ご予約の日時を変更しました。\n📅 新しい日時：{new_date} {new_time}"
+            else:
+                return "現在、変更できるご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
+        except Exception as e:
+            logging.error(f"Modify request failed: {e}")
+            return "申し訳ございません。変更の処理中にエラーが発生しました。少し時間を置いてお試しください。"

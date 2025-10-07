@@ -7,6 +7,7 @@ A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retri
 - LINE Bot integration for customer interactions
 - AI-powered FAQ responses using RAG and ChatGPT
 - Google Calendar integration for reservations
+- Google Sheets logging for all bot interactions
 - Reservation flow management
 - Natural language processing for customer queries
 
@@ -39,6 +40,8 @@ A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retri
    - `LINE_CHANNEL_SECRET`: Your LINE Bot Channel Secret
    - `OPENAI_API_KEY`: Your OpenAI API key
    - `GOOGLE_CREDENTIALS`: Your Google Calendar API credentials (JSON format)
+   - `GOOGLE_SHEETS_CREDENTIALS`: Your Google Sheets API service account credentials (JSON format)
+   - `GOOGLE_SHEET_ID`: Your Google Sheet ID for logging (from the sheet URL)
 
 4. **Deploy:**
    - Click "Create Web Service"
@@ -48,6 +51,30 @@ A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retri
    - Once deployed, copy your Render service URL
    - In LINE Developers Console, set your webhook URL to: `https://your-service-name.onrender.com/api/callback`
 
+### Google Sheets Logging Setup
+
+The bot automatically logs all interactions to Google Sheets for analytics and monitoring:
+
+1. **Create a Google Sheet:**
+   - Create a new Google Sheet for logging
+   - Copy the Sheet ID from the URL (the long string between `/d/` and `/edit`)
+
+2. **Set up Google Sheets API:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select existing one
+   - Enable Google Sheets API
+   - Create a Service Account
+   - Download the JSON credentials file
+   - Share your Google Sheet with the service account email (found in the JSON file)
+
+3. **Configure Environment Variables:**
+   - `GOOGLE_SHEETS_CREDENTIALS`: Paste the entire JSON credentials file content
+   - `GOOGLE_SHEET_ID`: The Sheet ID from step 1
+
+The bot will automatically create headers and log:
+- Timestamp, User ID, User Name, Message Type, User Message, Bot Response
+- Action Type, Reservation Data, KB Category, Processing Time
+
 ### Environment Variables
 
 | Variable | Description | Required |
@@ -55,7 +82,9 @@ A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retri
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot Channel Access Token | Yes |
 | `LINE_CHANNEL_SECRET` | LINE Bot Channel Secret | Yes |
 | `OPENAI_API_KEY` | OpenAI API key for ChatGPT integration | Yes |
-| `GOOGLE_CREDENTIALS` | Google Calendar API credentials (JSON) | Yes |
+| `GOOGLE_CREDENTIALS` | Google Calendar API credentials (JSON format) | Yes |
+| `GOOGLE_SHEETS_CREDENTIALS` | Google Sheets API service account credentials (JSON format) | Yes |
+| `GOOGLE_SHEET_ID` | Google Sheet ID for logging interactions | Yes |
 
 ### Local Development
 

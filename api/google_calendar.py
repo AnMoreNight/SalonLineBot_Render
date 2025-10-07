@@ -68,6 +68,113 @@ class GoogleCalendarHelper:
         if not self.service or not self.calendar_id:
             logging.warning("Google Calendar not configured, skipping event creation")
             return False
+
+    def _get_service_duration_minutes(self, service_name: str) -> int:
+        """Return duration in minutes for a given service name."""
+        service_durations = {
+            "カット": 60,
+            "カラー": 120,
+            "パーマ": 150,
+            "トリートメント": 90
+        }
+        return service_durations.get(service_name, 60)
+
+    def _find_upcoming_event_by_client(self, client_name: str, days_ahead: int = 90) -> Optional[Dict[str, Any]]:
+        """Find the next upcoming event for the given client name.
+
+        Tries to match by summary or description containing the client name.
+        """
+        if not self.service or not self.calendar_id:
+            logging.warning("Google Calendar not configured, cannot search events")
+            return None
+
+        try:
+            now = datetime.utcnow()
+            end = now + timedelta(days=days_ahead)
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=now.isoformat() + 'Z',
+                timeMax=end.isoformat() + 'Z',
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            events = events_result.get('items', [])
+            for event in events:
+                summary = event.get('summary', '') or ''
+                description = event.get('description', '') or ''
+                if client_name and (client_name in summary or client_name in description):
+                    return event
+
+            return None
+        except Exception as e:
+            logging.error(f"Failed to search events: {e}")
+            return None
+
+    def cancel_reservation(self, client_name: str) -> bool:
+        """Delete the client's upcoming reservation event if found."""
+        event = self._find_upcoming_event_by_client(client_name)
+        if not event:
+            return False
+        try:
+            self.service.events().delete(
+                calendarId=self.calendar_id,
+                eventId=event['id']
+            ).execute()
+            logging.info(f"Cancelled reservation for {client_name}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to cancel reservation: {e}")
+            return False
+
+    def modify_reservation_time(self, client_name: str, new_date: str, new_time: str) -> bool:
+        """Update the start/end time for the client's upcoming reservation.
+
+        Keeps other event fields intact; infers duration from summary/description if possible,
+        otherwise defaults to 60 minutes.
+        """
+        event = self._find_upcoming_event_by_client(client_name)
+        if not event:
+            return False
+
+        # Infer service name from summary like "[予約] カット - Name (Staff)"
+        summary = event.get('summary', '')
+        inferred_service = None
+        try:
+            # Extract the part between "[予約] " and " -"
+            if summary.startswith("[予約]") and ' -' in summary:
+                inferred_service = summary.replace("[予約] ", "", 1).split(" -", 1)[0].strip()
+        except Exception:
+            pass
+
+        duration_minutes = self._get_service_duration_minutes(inferred_service or "")
+
+        try:
+            start_dt = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M")
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            start_iso = start_dt.isoformat()
+            end_iso = end_dt.isoformat()
+
+            event['start'] = {
+                'dateTime': start_iso,
+                'timeZone': self.timezone,
+            }
+            event['end'] = {
+                'dateTime': end_iso,
+                'timeZone': self.timezone,
+            }
+
+            updated = self.service.events().update(
+                calendarId=self.calendar_id,
+                eventId=event['id'],
+                body=event
+            ).execute()
+
+            logging.info(f"Modified reservation time for {client_name}: {updated.get('htmlLink')}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to modify reservation time: {e}")
+            return False
         
         try:
             # Parse date and time
@@ -168,6 +275,93 @@ class GoogleCalendarHelper:
     #     except Exception as e:
     #         logging.warning(f"Could not load location from KB: {e}")
     #         return ""
+    
+    def get_available_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """
+        Get available time slots from Google Calendar
+        
+        Args:
+            start_date: Start date to check availability
+            end_date: End date to check availability
+            
+        Returns:
+            list: List of available time slots
+        """
+        if not self.service or not self.calendar_id:
+            logging.warning("Google Calendar not configured, using fallback slots")
+            return self._generate_fallback_slots(start_date, end_date)
+        
+        try:
+            # Get events from calendar
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=start_date.isoformat() + 'Z',
+                timeMax=end_date.isoformat() + 'Z',
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            events = events_result.get('items', [])
+            
+            # Generate all possible slots
+            all_slots = self._generate_all_slots(start_date, end_date)
+            
+            # Filter out booked slots
+            available_slots = []
+            for slot in all_slots:
+                slot_start = datetime.strptime(f"{slot['date']} {slot['time']}", "%Y-%m-%d %H:%M")
+                slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
+                
+                # Check if slot conflicts with any event
+                is_available = True
+                for event in events:
+                    event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
+                    event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
+                    
+                    # Check for overlap
+                    if (slot_start < event_end and slot_end > event_start):
+                        is_available = False
+                        break
+                
+                if is_available:
+                    available_slots.append(slot)
+            
+            return available_slots
+            
+        except Exception as e:
+            logging.error(f"Failed to get available slots from Google Calendar: {e}")
+            return self._generate_fallback_slots(start_date, end_date)
+    
+    def _generate_all_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """Generate all possible time slots for the given date range"""
+        slots = []
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+        
+        # Business hours: 9:00 to 17:00 (9 AM to 5 PM)
+        business_hours = list(range(9, 18))  # 9:00 to 17:00
+        
+        while current_date <= end_date_only:
+            # Skip Sundays (weekday 6)
+            if current_date.weekday() != 6:
+                for hour in business_hours:
+                    # Skip lunch break (12:00-13:00)
+                    if hour == 12:
+                        continue
+                    
+                    slots.append({
+                        "date": current_date.strftime("%Y-%m-%d"),
+                        "time": f"{hour:02d}:00",
+                        "available": True
+                    })
+            
+            current_date += timedelta(days=1)
+        
+        return slots
+    
+    def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """Generate fallback slots when Google Calendar is not available"""
+        return self._generate_all_slots(start_date, end_date)
     
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
