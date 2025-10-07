@@ -169,6 +169,93 @@ class GoogleCalendarHelper:
     #         logging.warning(f"Could not load location from KB: {e}")
     #         return ""
     
+    def get_available_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """
+        Get available time slots from Google Calendar
+        
+        Args:
+            start_date: Start date to check availability
+            end_date: End date to check availability
+            
+        Returns:
+            list: List of available time slots
+        """
+        if not self.service or not self.calendar_id:
+            logging.warning("Google Calendar not configured, using fallback slots")
+            return self._generate_fallback_slots(start_date, end_date)
+        
+        try:
+            # Get events from calendar
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=start_date.isoformat() + 'Z',
+                timeMax=end_date.isoformat() + 'Z',
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            events = events_result.get('items', [])
+            
+            # Generate all possible slots
+            all_slots = self._generate_all_slots(start_date, end_date)
+            
+            # Filter out booked slots
+            available_slots = []
+            for slot in all_slots:
+                slot_start = datetime.strptime(f"{slot['date']} {slot['time']}", "%Y-%m-%d %H:%M")
+                slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
+                
+                # Check if slot conflicts with any event
+                is_available = True
+                for event in events:
+                    event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
+                    event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
+                    
+                    # Check for overlap
+                    if (slot_start < event_end and slot_end > event_start):
+                        is_available = False
+                        break
+                
+                if is_available:
+                    available_slots.append(slot)
+            
+            return available_slots
+            
+        except Exception as e:
+            logging.error(f"Failed to get available slots from Google Calendar: {e}")
+            return self._generate_fallback_slots(start_date, end_date)
+    
+    def _generate_all_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """Generate all possible time slots for the given date range"""
+        slots = []
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+        
+        # Business hours: 9:00 to 17:00 (9 AM to 5 PM)
+        business_hours = list(range(9, 18))  # 9:00 to 17:00
+        
+        while current_date <= end_date_only:
+            # Skip Sundays (weekday 6)
+            if current_date.weekday() != 6:
+                for hour in business_hours:
+                    # Skip lunch break (12:00-13:00)
+                    if hour == 12:
+                        continue
+                    
+                    slots.append({
+                        "date": current_date.strftime("%Y-%m-%d"),
+                        "time": f"{hour:02d}:00",
+                        "available": True
+                    })
+            
+            current_date += timedelta(days=1)
+        
+        return slots
+    
+    def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
+        """Generate fallback slots when Google Calendar is not available"""
+        return self._generate_all_slots(start_date, end_date)
+    
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
         staff_emails = {
