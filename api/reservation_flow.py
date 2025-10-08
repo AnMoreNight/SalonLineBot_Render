@@ -37,39 +37,68 @@ class ReservationFlow:
         return self.google_calendar.get_available_slots(start_date, end_date)
     
     def _create_calendar_template(self) -> str:
-        """Create a calendar template for date selection with clickable dates"""
-        # Get available dates for the next 2 weeks
+        """Create a 1-month calendar template for date selection"""
+        # Get available dates for the next month
         start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=14)
-        available_slots = self._get_available_slots(start_date, 14)
+        end_date = start_date + timedelta(days=30)
+        available_slots = self._get_available_slots(start_date, 30)
         
         # Group slots by date
-        available_dates = {}
+        available_dates = set()
         for slot in available_slots:
             if slot["available"]:
-                date = slot["date"]
-                if date not in available_dates:
-                    available_dates[date] = []
-                available_dates[date].append(slot["time"])
+                available_dates.add(slot["date"])
         
-        # Create interactive calendar message with clickable dates
+        # Create month calendar
+        current_date = start_date
         calendar_message = "📅 ご希望の日付をお選びください：\n\n"
         
-        # Add available dates as clickable options
-        date_options = []
-        for date_str in sorted(available_dates.keys())[:7]:  # Show next 7 available days
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-            day_name = ["月", "火", "水", "木", "金", "土", "日"][date_obj.weekday()]
-            month_day = f"{date_obj.month}/{date_obj.day}"
-            
-            # Create clickable date option
-            date_option = f"📅 {month_day}({day_name})"
-            date_options.append(date_option)
-            calendar_message += f"{date_option} - {date_str}\n"
+        # Get current month and year
+        current_month = current_date.month
+        current_year = current_date.year
         
-        calendar_message += "\n💡 上記の日付をコピーして送信してください。"
-        calendar_message += "\n例：2025-01-01"
-        calendar_message += "\n\n※予約をキャンセルされる場合は「キャンセル」とお送りください。"
+        # Month header
+        month_names = ["1月", "2月", "3月", "4月", "5月", "6月", 
+                      "7月", "8月", "9月", "10月", "11月", "12月"]
+        calendar_message += f"🗓️ {current_year}年 {month_names[current_month-1]}\n\n"
+        
+        # Weekday headers
+        weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+        calendar_message += "   " + " ".join([f"{day:>2}" for day in weekdays]) + "\n"
+        
+        # Get first day of month and its weekday
+        first_day = current_date.replace(day=1)
+        first_weekday = first_day.weekday()  # Monday = 0, Sunday = 6
+        
+        # Create calendar grid
+        current_day = 1
+        last_day = (first_day.replace(month=first_day.month % 12 + 1, day=1) - timedelta(days=1)).day
+        
+        # Add empty cells for days before month starts
+        calendar_message += "   " + "   " * first_weekday
+        
+        # Add days of the month
+        while current_day <= last_day:
+            # Check if we need to start a new week
+            if (current_day - 1 + first_weekday) % 7 == 0 and current_day > 1:
+                calendar_message += "\n"
+                calendar_message += "   "
+            
+            # Format the day
+            date_str = f"{current_year}-{current_month:02d}-{current_day:02d}"
+            if date_str in available_dates:
+                # Available date - make it clickable
+                calendar_message += f"[{current_day:2d}]"
+            else:
+                # Unavailable date
+                calendar_message += f" {current_day:2d} "
+            
+            current_day += 1
+        
+        calendar_message += "\n\n"
+        calendar_message += "💡 利用可能な日付をクリックしてください\n"
+        calendar_message += "例：[15] をクリック → 2025-01-15\n\n"
+        calendar_message += "※予約をキャンセルされる場合は「キャンセル」とお送りください。"
         
         return calendar_message
     
@@ -252,17 +281,30 @@ class ReservationFlow:
         if date_match:
             selected_date = date_match.group(1)
         else:
-            # Fallback to old text-based parsing for backward compatibility
-            if "明日" in message:
-                selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            elif "明後日" in message:
-                selected_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
-            elif "土曜日" in message or "土曜" in message:
-                # Find next Saturday
-                days_ahead = 5 - datetime.now().weekday()  # Saturday is 5
-                if days_ahead <= 0:
-                    days_ahead += 7
-                selected_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+            # Try to parse clickable date format [DD] from calendar
+            clickable_match = re.search(r'\[(\d{1,2})\]', message)
+            if clickable_match:
+                day = int(clickable_match.group(1))
+                current_date = datetime.now()
+                # Create the date for this month
+                try:
+                    selected_date = f"{current_date.year}-{current_date.month:02d}-{day:02d}"
+                    # Validate the date exists
+                    datetime.strptime(selected_date, "%Y-%m-%d")
+                except ValueError:
+                    selected_date = None
+            else:
+                # Fallback to old text-based parsing for backward compatibility
+                if "明日" in message:
+                    selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                elif "明後日" in message:
+                    selected_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+                elif "土曜日" in message or "土曜" in message:
+                    # Find next Saturday
+                    days_ahead = 5 - datetime.now().weekday()  # Saturday is 5
+                    if days_ahead <= 0:
+                        days_ahead += 7
+                    selected_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         
         if not selected_date:
             return "申し訳ございませんが、その日付は選択できません。上記の日付からお選びください。"
