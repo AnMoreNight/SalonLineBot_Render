@@ -37,70 +37,97 @@ class ReservationFlow:
         return self.google_calendar.get_available_slots(start_date, end_date)
     
     def _create_calendar_template(self) -> str:
-        """Create a 1-month calendar template for date selection"""
-        # Get available dates for the next month
+        """Create a professional 2-month weekday calendar for date selection"""
+        # Get available dates for current month + next month (weekdays only)
         start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=30)
-        available_slots = self._get_available_slots(start_date, 30)
+        end_date = start_date + timedelta(days=60)  # 2 months ahead
+        available_slots = self._get_available_slots(start_date, 60)
         
-        # Group slots by date
+        # Group slots by date (weekdays only)
         available_dates = set()
         for slot in available_slots:
             if slot["available"]:
-                available_dates.add(slot["date"])
+                date_str = slot["date"]
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                # Only include weekdays (Monday=0 to Friday=4)
+                if date_obj.weekday() < 5:  # Monday to Friday
+                    available_dates.add(date_str)
         
-        # Create month calendar
-        current_date = start_date
-        calendar_message = "📅 ご希望の日付をお選びください：\n\n"
+        # Create professional calendar
+        calendar_message = "📅 **ご希望の日付をお選びください**\n\n"
         
-        # Get current month and year
-        current_month = current_date.month
-        current_year = current_date.year
+        # Show current month and next month
+        current_month = start_date.month
+        current_year = start_date.year
+        next_month = current_month + 1 if current_month < 12 else 1
+        next_year = current_year if current_month < 12 else current_year + 1
         
-        # Month header
         month_names = ["1月", "2月", "3月", "4月", "5月", "6月", 
                       "7月", "8月", "9月", "10月", "11月", "12月"]
-        calendar_message += f"🗓️ {current_year}年 {month_names[current_month-1]}\n\n"
         
-        # Weekday headers
-        weekdays = ["月", "火", "水", "木", "金", "土", "日"]
-        calendar_message += "   " + " ".join([f"{day:>2}" for day in weekdays]) + "\n"
+        # Current month
+        calendar_message += f"🗓️ **{current_year}年 {month_names[current_month-1]}**\n"
+        calendar_message += self._create_weekday_calendar(current_year, current_month, available_dates)
         
-        # Get first day of month and its weekday
-        first_day = current_date.replace(day=1)
-        first_weekday = first_day.weekday()  # Monday = 0, Sunday = 6
+        # Next month
+        calendar_message += f"\n🗓️ **{next_year}年 {month_names[next_month-1]}**\n"
+        calendar_message += self._create_weekday_calendar(next_year, next_month, available_dates)
         
-        # Create calendar grid
-        current_day = 1
-        last_day = (first_day.replace(month=first_day.month % 12 + 1, day=1) - timedelta(days=1)).day
-        
-        # Add empty cells for days before month starts
-        calendar_message += "   " + "   " * first_weekday
-        
-        # Add days of the month
-        while current_day <= last_day:
-            # Check if we need to start a new week
-            if (current_day - 1 + first_weekday) % 7 == 0 and current_day > 1:
-                calendar_message += "\n"
-                calendar_message += "   "
-            
-            # Format the day
-            date_str = f"{current_year}-{current_month:02d}-{current_day:02d}"
-            if date_str in available_dates:
-                # Available date - make it clickable
-                calendar_message += f"[{current_day:2d}]"
-            else:
-                # Unavailable date
-                calendar_message += f" {current_day:2d} "
-            
-            current_day += 1
-        
-        calendar_message += "\n\n"
-        calendar_message += "💡 利用可能な日付をクリックしてください\n"
-        calendar_message += "例：[15] をクリック → 2025-01-15\n\n"
-        calendar_message += "※予約をキャンセルされる場合は「キャンセル」とお送りください。"
+        calendar_message += "\n" + "="*30 + "\n"
+        calendar_message += "💡 **利用可能な日付をクリックしてください**\n"
+        calendar_message += "📝 例：`[15]` をクリック\n"
+        calendar_message += "❌ 予約をキャンセルする場合は「キャンセル」と送信"
         
         return calendar_message
+    
+    def _create_weekday_calendar(self, year: int, month: int, available_dates: set) -> str:
+        """Create a weekday-only calendar for a specific month"""
+        # Get first day of month
+        first_day = datetime(year, month, 1)
+        last_day = (first_day.replace(month=month % 12 + 1, day=1) - timedelta(days=1)).day
+        
+        # Weekday headers (Monday to Friday only)
+        weekdays = [" 月 ", " 火 ", " 水 ", " 木 ", " 金 "]
+        calendar = "   " + " ".join([f"{day:>3}" for day in weekdays]) + "\n"
+        
+        # Find first weekday of the month
+        first_weekday = first_day.weekday()  # Monday = 0, Sunday = 6
+        
+        # Start from the first Monday of the week containing the 1st
+        start_date = first_day - timedelta(days=first_weekday)
+        
+        # Create calendar grid (weekdays only)
+        current_date = start_date
+        week_count = 0
+        
+        while current_date.month <= month and week_count < 6:  # Max 6 weeks
+            week_line = "   "
+            for day_offset in range(5):  # Monday to Friday only
+                check_date = current_date + timedelta(days=day_offset)
+                
+                if check_date.month == month and 1 <= check_date.day <= last_day:
+                    day = check_date.day
+                    date_str = f"{year}-{month:02d}-{day:02d}"
+                    
+                    if date_str in available_dates:
+                        # Available date - clickable
+                        week_line += f"[{day:2d}] "
+                    else:
+                        # Unavailable date
+                        week_line += f" {day:2d}  "
+                else:
+                    # Empty cell
+                    week_line += "    "
+            
+            # Only add line if it has content for this month
+            if any(1 <= (current_date + timedelta(days=i)).day <= last_day 
+                   for i in range(5) if (current_date + timedelta(days=i)).month == month):
+                calendar += week_line.rstrip() + "\n"
+            
+            current_date += timedelta(days=7)  # Next week
+            week_count += 1
+        
+        return calendar
     
     def detect_intent(self, message: str, user_id: str = None) -> str:
         """Detect user intent from message with context awareness"""
