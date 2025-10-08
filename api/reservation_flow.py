@@ -2,7 +2,7 @@
 Reservation flow system with intent detection, candidate suggestions, and confirmation
 """
 import re
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
 import json
 import logging
@@ -35,6 +35,43 @@ class ReservationFlow:
         
         end_date = start_date + timedelta(days=days_ahead)
         return self.google_calendar.get_available_slots(start_date, end_date)
+    
+    def _create_calendar_template(self) -> str:
+        """Create a calendar template for date selection with clickable dates"""
+        # Get available dates for the next 2 weeks
+        start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=14)
+        available_slots = self._get_available_slots(start_date, 14)
+        
+        # Group slots by date
+        available_dates = {}
+        for slot in available_slots:
+            if slot["available"]:
+                date = slot["date"]
+                if date not in available_dates:
+                    available_dates[date] = []
+                available_dates[date].append(slot["time"])
+        
+        # Create interactive calendar message with clickable dates
+        calendar_message = "📅 ご希望の日付をお選びください：\n\n"
+        
+        # Add available dates as clickable options
+        date_options = []
+        for date_str in sorted(available_dates.keys())[:7]:  # Show next 7 available days
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            day_name = ["月", "火", "水", "木", "金", "土", "日"][date_obj.weekday()]
+            month_day = f"{date_obj.month}/{date_obj.day}"
+            
+            # Create clickable date option
+            date_option = f"📅 {month_day}({day_name})"
+            date_options.append(date_option)
+            calendar_message += f"{date_option} - {date_str}\n"
+        
+        calendar_message += "\n💡 上記の日付をコピーして送信してください。"
+        calendar_message += "\n例：2025-01-01"
+        calendar_message += "\n\n※予約をキャンセルされる場合は「キャンセル」とお送りください。"
+        
+        return calendar_message
     
     def detect_intent(self, message: str, user_id: str = None) -> str:
         """Detect user intent from message with context awareness"""
@@ -197,37 +234,37 @@ class ReservationFlow:
         # Add "さん" only for specific staff members, not for "未指定"
         staff_display = f"{selected_staff}さん" if selected_staff != "未指定" else selected_staff
         
-        return f"""{staff_display}ですね！
-ご希望の日付をお選びください。
-
-今週の空いている日：
-・明日
-・明後日
-・今週の土曜日
-
-日付をお送りください。
-
-※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+        # Return calendar template for date selection
+        return self._create_calendar_template()
     
     def _handle_date_selection(self, user_id: str, message: str) -> str:
-        """Handle date selection"""
+        """Handle date selection from calendar template"""
         # Check for cancellation first
         if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
-        # Simple date parsing (in real implementation, use proper date parsing)
-        if "明日" in message:
-            selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        elif "明後日" in message:
-            selected_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
-        elif "土曜日" in message or "土曜" in message:
-            # Find next Saturday
-            days_ahead = 5 - datetime.now().weekday()  # Saturday is 5
-            if days_ahead <= 0:
-                days_ahead += 7
-            selected_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        # Parse date from calendar template response
+        selected_date = None
+        
+        # Try to parse YYYY-MM-DD format (from calendar template)
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', message)
+        if date_match:
+            selected_date = date_match.group(1)
         else:
+            # Fallback to old text-based parsing for backward compatibility
+            if "明日" in message:
+                selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif "明後日" in message:
+                selected_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+            elif "土曜日" in message or "土曜" in message:
+                # Find next Saturday
+                days_ahead = 5 - datetime.now().weekday()  # Saturday is 5
+                if days_ahead <= 0:
+                    days_ahead += 7
+                selected_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        
+        if not selected_date:
             return "申し訳ございませんが、その日付は選択できません。上記の日付からお選びください。"
         
         self.user_states[user_id]["data"]["date"] = selected_date
