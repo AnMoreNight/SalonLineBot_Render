@@ -363,6 +363,15 @@ class GoogleCalendarHelper:
         """Generate fallback slots when Google Calendar is not available"""
         return self._generate_all_slots(start_date, end_date)
     
+    def get_calendar_url(self) -> str:
+        """Get the public Google Calendar URL for viewing availability"""
+        if not self.calendar_id:
+            return "https://calendar.google.com/calendar"
+        
+        # Create a public calendar URL
+        # Format: https://calendar.google.com/calendar/embed?src=CALENDAR_ID
+        return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
+    
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
         staff_emails = {
