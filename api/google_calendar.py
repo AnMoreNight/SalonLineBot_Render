@@ -384,7 +384,7 @@ class GoogleCalendarHelper:
         
         # Convert business period to datetime objects
         tz = pytz.timezone(self.timezone)
-        business_start = business_start_event= tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
+        business_start = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
         business_end = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["end"])))
         
         # Convert events to datetime ranges and merge overlapping ones
@@ -393,29 +393,20 @@ class GoogleCalendarHelper:
             event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
             event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
             
-            # # Only consider events that overlap with business hours
-            # if event_start < business_end and event_end > business_start_event:
-            #     event_ranges.append({
-            #         'start': event_start,
-            #         'end': event_end
-            #     })
-            #     business_start_event = tz.localize(event_end) if event_end.tzinfo is None else event_end
-            # # print("event_ranges in", date, ":", event_start, event_end, ":", event_ranges)
-
-            if event_start < business_end and event_end > business_start_event:
+            if event_start < business_end and event_end > business_start:
                 if event_start > business_start:
                     available_periods.append({
-                        'start': business_start_event,
-                        'end': event_start
+                        'start': business_start.strftime("%H:%M"),
+                        'end': event_start.strftime("%H:%M")
                     })
-                    business_start_event = tz.localize(event_end) if event_start.tzinfo is None else event_end
-                elif event_start == business_start_event:
-                    business_start_event = tz.localize(event_end) if event_end.tzinfo is None else event_end
+                    business_start = tz.localize(event_end) if event_start.tzinfo is None else event_end
+                elif event_start == business_start:
+                    business_start = tz.localize(event_end) if event_end.tzinfo is None else event_end
 
-        if business_start_event < business_end:
+        if business_start < business_end:
             available_periods.append({
-                'start': business_start_event,
-                'end': business_end
+                'start': business_start.strftime("%H:%M"),
+                'end': business_end.strftime("%H:%M")
             })
         
         return available_periods
