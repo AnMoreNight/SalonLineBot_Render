@@ -23,14 +23,24 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# Initialize AI modules
-rag_faq = RAGFAQ()
-chatgpt_faq = ChatGPTFAQ()
-reservation_flow = ReservationFlow()
-sheets_logger = GoogleSheetsLogger()
-
-# Set LINE configuration for reservation flow
-reservation_flow.set_line_configuration(configuration)
+# Initialize AI modules with error handling
+try:
+    rag_faq = RAGFAQ()
+    chatgpt_faq = ChatGPTFAQ()
+    reservation_flow = ReservationFlow()
+    sheets_logger = GoogleSheetsLogger()
+    
+    # Set LINE configuration for reservation flow
+    reservation_flow.set_line_configuration(configuration)
+    
+    logging.info("All modules initialized successfully")
+except Exception as e:
+    logging.error(f"Failed to initialize modules: {e}")
+    # Set fallback values to prevent crashes
+    rag_faq = None
+    chatgpt_faq = None
+    reservation_flow = None
+    sheets_logger = None
 
 app = FastAPI()
 
@@ -81,33 +91,43 @@ def handle_message(event: MessageEvent):
             action_type = "ping"
         else:
             # 1. Try reservation flow first (highest priority)
-            reservation_reply = reservation_flow.get_response(user_id, message_text)
-            if reservation_reply:
-                reply = reservation_reply
-                action_type = "reservation"
-                # Try to get reservation data if available
-                if hasattr(reservation_flow, 'user_states') and user_id in reservation_flow.user_states:
-                    reservation_data = reservation_flow.user_states[user_id].get('data', {})
-            else:
-                # 2. Integrated RAG-FAQ + ChatGPT workflow
-                # Step 1: Search KB for facts
-                kb_facts = rag_faq.get_kb_facts(message_text)
-                
-                if kb_facts:
-                    # Step 2: Use KB facts with ChatGPT for natural language response
-                    reply = chatgpt_faq.get_response(message_text, kb_facts)
-                    kb_category = kb_facts.get('category', 'unknown')
-                    action_type = "faq"
-                    
-                    # Log successful KB hit
-                    logging.info(f"KB hit for user {user_id}: {message_text} -> {kb_category}")
+            if reservation_flow:
+                reservation_reply = reservation_flow.get_response(user_id, message_text)
+                if reservation_reply:
+                    reply = reservation_reply
+                    action_type = "reservation"
+                    # Try to get reservation data if available
+                    if hasattr(reservation_flow, 'user_states') and user_id in reservation_flow.user_states:
+                        reservation_data = reservation_flow.user_states[user_id].get('data', {})
                 else:
-                    # Step 3: No KB facts found - return standard "分かりません" response
-                    reply = "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
-                    action_type = "unknown"
-                    
-                    # Log KB miss for future enhancement
-                    logging.warning(f"KB miss for user {user_id}: {message_text}")
+                    # 2. Integrated RAG-FAQ + ChatGPT workflow
+                    if rag_faq and chatgpt_faq:
+                        # Step 1: Search KB for facts
+                        kb_facts = rag_faq.get_kb_facts(message_text)
+                        
+                        if kb_facts:
+                            # Step 2: Use KB facts with ChatGPT for natural language response
+                            reply = chatgpt_faq.get_response(message_text, kb_facts)
+                            kb_category = kb_facts.get('category', 'unknown')
+                            action_type = "faq"
+                            
+                            # Log successful KB hit
+                            logging.info(f"KB hit for user {user_id}: {message_text} -> {kb_category}")
+                        else:
+                            # Step 3: No KB facts found - return standard "分かりません" response
+                            reply = "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
+                            action_type = "unknown"
+                            
+                            # Log KB miss for future enhancement
+                            logging.warning(f"KB miss for user {user_id}: {message_text}")
+                    else:
+                        # Fallback when AI modules are not available
+                        reply = "申し訳ございませんが、現在システムの初期化中です。しばらくお待ちください。"
+                        action_type = "system_error"
+            else:
+                # Fallback when reservation flow is not available
+                reply = "申し訳ございませんが、現在システムの初期化中です。しばらくお待ちください。"
+                action_type = "system_error"
 
         # Reply
         try:
@@ -121,13 +141,14 @@ def handle_message(event: MessageEvent):
         except Exception as e:
             logging.error(f"LINE reply error: {e}")
             # Log error to sheets
-            sheets_logger.log_error(
-                user_id=user_id,
-                error_message=str(e),
-                user_name=user_name,
-                user_message=message_text,
-                bot_response="Error occurred"
-            )
+            if sheets_logger:
+                sheets_logger.log_error(
+                    user_id=user_id,
+                    error_message=str(e),
+                    user_name=user_name,
+                    user_message=message_text,
+                    bot_response="Error occurred"
+                )
             return
 
     except Exception as e:
@@ -135,44 +156,46 @@ def handle_message(event: MessageEvent):
         reply = "申し訳ございませんが、エラーが発生しました。"
         action_type = "error"
         # Log error to sheets
-        sheets_logger.log_error(
-            user_id=user_id,
-            error_message=str(e),
-            user_name=user_name,
-            user_message=message_text,
-            bot_response=reply
-        )
+        if sheets_logger:
+            sheets_logger.log_error(
+                user_id=user_id,
+                error_message=str(e),
+                user_name=user_name,
+                user_message=message_text,
+                bot_response=reply
+            )
         return
 
     # Log successful interaction to Google Sheets
     processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
-    if action_type == "reservation":
-        sheets_logger.log_reservation_action(
-            user_id=user_id,
-            action=action_type,
-            user_name=user_name,
-            reservation_data=reservation_data,
-            user_message=message_text,
-            bot_response=reply
-        )
-    elif action_type == "faq":
-        sheets_logger.log_faq_interaction(
-            user_id=user_id,
-            user_message=message_text,
-            bot_response=reply,
-            user_name=user_name,
-            kb_category=kb_category,
-            processing_time=processing_time
-        )
-    else:
-        sheets_logger.log_message(
-            user_id=user_id,
-            user_message=message_text,
-            bot_response=reply,
-            user_name=user_name,
-            message_type="text",
-            action_type=action_type,
-            processing_time=processing_time
-        )
+    if sheets_logger:
+        if action_type == "reservation":
+            sheets_logger.log_reservation_action(
+                user_id=user_id,
+                action=action_type,
+                user_name=user_name,
+                reservation_data=reservation_data,
+                user_message=message_text,
+                bot_response=reply
+            )
+        elif action_type == "faq":
+            sheets_logger.log_faq_interaction(
+                user_id=user_id,
+                user_message=message_text,
+                bot_response=reply,
+                user_name=user_name,
+                kb_category=kb_category,
+                processing_time=processing_time
+            )
+        else:
+            sheets_logger.log_message(
+                user_id=user_id,
+                user_message=message_text,
+                bot_response=reply,
+                user_name=user_name,
+                message_type="text",
+                action_type=action_type,
+                processing_time=processing_time
+            )
 

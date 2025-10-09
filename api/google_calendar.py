@@ -19,12 +19,12 @@ class GoogleCalendarHelper:
         self.timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "Asia/Tokyo")
         self.service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-        print(self.calendar_id)
-        print(self.timezone)
-        print(self.service_account_json)
-
         self.service = None
-        self._authenticate()
+        try:
+            self._authenticate()
+        except Exception as e:
+            logging.error(f"Failed to initialize Google Calendar: {e}")
+            self.service = None
     
     def _authenticate(self):
         """Authenticate with Google Calendar API using service account"""
