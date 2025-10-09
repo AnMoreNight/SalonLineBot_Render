@@ -187,3 +187,160 @@ class GoogleSheetsLogger:
             action_type="error",
             kb_category="error"
         )
+    
+    def _get_reservations_worksheet(self):
+        """Get or create the reservations worksheet"""
+        try:
+            load_dotenv()
+            credentials_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not credentials_json:
+                return None
+            
+            credentials_info = json.loads(credentials_json)
+            scope = [
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(
+                credentials_info, scope
+            )
+            gc = gspread.authorize(creds)
+            
+            spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
+            if not spreadsheet_id:
+                return None
+            
+            spreadsheet = gc.open_by_key(spreadsheet_id)
+            
+            # Try to get existing reservations worksheet
+            try:
+                reservations_worksheet = spreadsheet.worksheet("Reservations")
+            except gspread.WorksheetNotFound:
+                # Create new reservations worksheet
+                reservations_worksheet = spreadsheet.add_worksheet(
+                    title="Reservations", 
+                    rows=1000, 
+                    cols=10
+                )
+                # Setup headers for reservations
+                self._setup_reservations_headers(reservations_worksheet)
+            
+            return reservations_worksheet
+            
+        except Exception as e:
+            logging.error(f"Failed to get reservations worksheet: {e}")
+            return None
+    
+    def _setup_reservations_headers(self, worksheet):
+        """Setup headers for the reservations worksheet"""
+        headers = [
+            "Reservation ID",
+            "Client Name",
+            "Date",
+            "Start Time",
+            "End Time",
+            "Service",
+            "Staff",
+            "Duration (min)",
+            "Price",
+            "Status"
+        ]
+        
+        try:
+            worksheet.append_row(headers)
+            logging.info("Reservations worksheet headers setup completed")
+        except Exception as e:
+            logging.error(f"Failed to setup reservations headers: {e}")
+    
+    def save_reservation(self, reservation_data: Dict[str, Any]) -> bool:
+        """Save a new reservation to the reservations worksheet"""
+        reservations_worksheet = self._get_reservations_worksheet()
+        if not reservations_worksheet:
+            return False
+        
+        try:
+            row_data = [
+                reservation_data.get("reservation_id", ""),
+                reservation_data.get("client_name", ""),
+                reservation_data.get("date", ""),
+                reservation_data.get("start_time", ""),
+                reservation_data.get("end_time", ""),
+                reservation_data.get("service", ""),
+                reservation_data.get("staff", ""),
+                reservation_data.get("duration", ""),
+                reservation_data.get("price", ""),
+                "Confirmed"  # Default status
+            ]
+            
+            reservations_worksheet.append_row(row_data)
+            logging.info(f"Saved reservation {reservation_data.get('reservation_id')} to Google Sheets")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to save reservation to Google Sheets: {e}")
+            return False
+    
+    def get_all_reservations(self) -> list:
+        """Get all reservations from the reservations worksheet"""
+        reservations_worksheet = self._get_reservations_worksheet()
+        if not reservations_worksheet:
+            return []
+        
+        try:
+            records = reservations_worksheet.get_all_records()
+            # Filter out header row and return only confirmed reservations
+            reservations = []
+            for record in records:
+                if record.get("Reservation ID") and record.get("Status") == "Confirmed":
+                    reservations.append({
+                        "reservation_id": record.get("Reservation ID"),
+                        "client_name": record.get("Client Name"),
+                        "date": record.get("Date"),
+                        "start_time": record.get("Start Time"),
+                        "end_time": record.get("End Time"),
+                        "service": record.get("Service"),
+                        "staff": record.get("Staff"),
+                        "duration": record.get("Duration (min)"),
+                        "price": record.get("Price"),
+                        "status": record.get("Status")
+                    })
+            return reservations
+            
+        except Exception as e:
+            logging.error(f"Failed to get reservations from Google Sheets: {e}")
+            return []
+    
+    def get_user_reservations(self, client_name: str) -> list:
+        """Get reservations for a specific client"""
+        all_reservations = self.get_all_reservations()
+        return [res for res in all_reservations if res["client_name"] == client_name]
+    
+    def update_reservation_status(self, reservation_id: str, status: str) -> bool:
+        """Update the status of a reservation"""
+        reservations_worksheet = self._get_reservations_worksheet()
+        if not reservations_worksheet:
+            return False
+        
+        try:
+            # Find the row with the reservation ID
+            records = reservations_worksheet.get_all_records()
+            for i, record in enumerate(records, 2):  # Start from row 2 (skip header)
+                if record.get("Reservation ID") == reservation_id:
+                    # Update the status in column J (10th column)
+                    reservations_worksheet.update_cell(i, 10, status)
+                    logging.info(f"Updated reservation {reservation_id} status to {status}")
+                    return True
+            
+            logging.warning(f"Reservation {reservation_id} not found for status update")
+            return False
+            
+        except Exception as e:
+            logging.error(f"Failed to update reservation status: {e}")
+            return False
+
+
+if __name__ == "__main__":
+    # Test the Google Sheets logger
+    logger = GoogleSheetsLogger()
+    print("Google Sheets Logger test completed")

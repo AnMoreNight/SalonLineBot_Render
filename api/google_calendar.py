@@ -249,6 +249,38 @@ class GoogleCalendarHelper:
             logging.error(f"Failed to cancel reservation: {e}")
             return False
 
+    def cancel_reservation_by_id(self, reservation_id: str) -> bool:
+        """Delete a reservation event by reservation ID."""
+        try:
+            # Search for events with the reservation ID in the description
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=datetime.now().isoformat() + 'Z',
+                maxResults=100,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            events = events_result.get('items', [])
+            
+            for event in events:
+                description = event.get('description', '')
+                if reservation_id in description:
+                    # Found the event with this reservation ID
+                    self.service.events().delete(
+                        calendarId=self.calendar_id,
+                        eventId=event['id']
+                    ).execute()
+                    logging.info(f"Cancelled reservation {reservation_id} from Google Calendar")
+                    return True
+            
+            logging.warning(f"Reservation {reservation_id} not found in Google Calendar")
+            return False
+            
+        except Exception as e:
+            logging.error(f"Failed to cancel reservation by ID {reservation_id}: {e}")
+            return False
+
     def modify_reservation_time(self, client_name: str, new_date: str, new_time: str) -> bool:
         """Update the start/end time for the client's upcoming reservation.
 

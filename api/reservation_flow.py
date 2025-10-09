@@ -207,6 +207,8 @@ class ReservationFlow:
             return self._handle_time_selection(user_id, message)
         elif step == "confirmation":
             return self._handle_confirmation(user_id, message)
+        elif step == "cancel_selection":
+            return self._handle_cancel_selection(user_id, message)
         else:
             return "予約フローに問題が発生しました。最初からやり直してください。"
     
@@ -596,6 +598,32 @@ class ReservationFlow:
             
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
+            
+            # Save reservation to Google Sheets
+            try:
+                from google_sheets_logger import GoogleSheetsLogger
+                sheets_logger = GoogleSheetsLogger()
+                
+                # Prepare reservation data for Google Sheets
+                service_info = self.services.get(reservation_data['service'], {})
+                sheet_reservation_data = {
+                    "reservation_id": reservation_id,
+                    "client_name": client_name,
+                    "date": reservation_data['date'],
+                    "start_time": reservation_data.get('start_time', reservation_data['time']),
+                    "end_time": reservation_data.get('end_time', ''),
+                    "service": reservation_data['service'],
+                    "staff": reservation_data['staff'],
+                    "duration": service_info.get('duration', 60),
+                    "price": service_info.get('price', 0)
+                }
+                
+                sheets_success = sheets_logger.save_reservation(sheet_reservation_data)
+                if not sheets_success:
+                    logging.warning(f"Failed to save reservation to Google Sheets for user {user_id}")
+                    
+            except Exception as e:
+                logging.error(f"Error saving reservation to Google Sheets: {e}")
            
             # Get time range for display
             time_display = reservation_data.get('start_time', reservation_data['time'])
@@ -649,17 +677,105 @@ class ReservationFlow:
             return "お客様"  # Fallback name
 
     def _handle_cancel_request(self, user_id: str) -> str:
-        """Cancel existing calendar reservation for the user if present."""
+        """Show user's reservations and handle cancellation by reservation ID."""
         client_name = self._get_line_display_name(user_id)
+        
         try:
-            success = self.google_calendar.cancel_reservation(client_name)
-            if success:
-                return "ご予約のキャンセルを承りました。\nまたのご利用をお待ちしております。"
-            else:
+            # Get user's reservations from Google Sheets
+            from google_sheets_logger import GoogleSheetsLogger
+            sheets_logger = GoogleSheetsLogger()
+            reservations = sheets_logger.get_user_reservations(client_name)
+            
+            if not reservations:
                 return "現在、登録されているご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
+            
+            # Store reservations in user state for ID selection
+            self.user_states[user_id] = {
+                "step": "cancel_selection",
+                "data": {"reservations": reservations}
+            }
+            
+            # Format reservation list
+            reservation_list = []
+            for i, res in enumerate(reservations, 1):
+                reservation_list.append(
+                    f"{i}. **{res['reservation_id']}**\n"
+                    f"   📅 {res['date']} {res['start_time']}~{res['end_time']}\n"
+                    f"   💇 {res['service']} - {res['staff']}"
+                )
+            
+            return f"""ご予約一覧です：
+
+{chr(10).join(reservation_list)}
+
+キャンセルしたい予約の**予約ID**（例：{reservations[0]['reservation_id']}）を入力してください。
+
+❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+            
         except Exception as e:
             logging.error(f"Cancel request failed: {e}")
             return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
+
+    def _handle_cancel_selection(self, user_id: str, message: str) -> str:
+        """Handle reservation ID selection for cancellation."""
+        reservations = self.user_states[user_id]["data"].get("reservations", [])
+        
+        # Check if user wants to cancel the cancellation
+        cancel_keywords = self.confirmation_keywords.get("no", [])
+        if any(keyword in message for keyword in cancel_keywords):
+            # Clear cancel state
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+            return "キャンセルを中止しました。\n他にご質問がございましたらお気軽にお声かけください。"
+        
+        # Find reservation by ID
+        reservation_id = message.strip()
+        selected_reservation = None
+        
+        for res in reservations:
+            if res["reservation_id"] == reservation_id:
+                selected_reservation = res
+                break
+        
+        if not selected_reservation:
+            return f"""予約ID「{reservation_id}」が見つかりませんでした。
+
+上記の予約一覧から正しい予約IDを入力してください。
+
+❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+        
+        try:
+            # Update status in Google Sheets to "Cancelled"
+            from google_sheets_logger import GoogleSheetsLogger
+            sheets_logger = GoogleSheetsLogger()
+            sheets_success = sheets_logger.update_reservation_status(reservation_id, "Cancelled")
+            
+            if not sheets_success:
+                return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
+            
+            # Remove from Google Calendar
+            calendar_success = self.google_calendar.cancel_reservation_by_id(reservation_id)
+            
+            if not calendar_success:
+                logging.warning(f"Failed to remove reservation {reservation_id} from Google Calendar")
+            
+            # Clear cancel state
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+            
+            return f"""✅ 予約のキャンセルが完了しました！
+
+📋 キャンセル内容：
+• 予約ID：{reservation_id}
+• 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
+• サービス：{selected_reservation['service']}
+• 担当者：{selected_reservation['staff']}
+
+またのご利用をお待ちしております。"""
+                
+        except Exception as e:
+            logging.error(f"Cancel selection failed: {e}")
+            return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
     def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
         """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM.
