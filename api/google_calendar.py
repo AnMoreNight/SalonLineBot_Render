@@ -81,6 +81,88 @@ class GoogleCalendarHelper:
         if not self.service or not self.calendar_id:
             logging.warning("Google Calendar not configured, skipping event creation")
             return False
+        
+        try:
+            # Parse date and time
+            date_str = reservation_data['date']
+            service = reservation_data['service']
+            staff = reservation_data['staff']
+            
+            # Handle both single time and time range
+            if 'start_time' in reservation_data and 'end_time' in reservation_data:
+                start_time_str = reservation_data['start_time']
+                end_time_str = reservation_data['end_time']
+                
+                # Calculate start and end datetime
+                start_datetime = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M")
+                end_datetime = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M")
+            else:
+                # Fallback to single time (backward compatibility)
+                time_str = reservation_data['time']
+                start_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                
+                # Get service duration and calculate end time
+                duration_minutes = self._get_service_duration_minutes(service)
+                end_datetime = start_datetime + timedelta(minutes=duration_minutes)
+            
+            # Calculate duration for display purposes
+            duration_minutes = int((end_datetime - start_datetime).total_seconds() / 60)
+            
+            # Format for Google Calendar API
+            start_iso = start_datetime.isoformat()
+            end_iso = end_datetime.isoformat()
+            
+            # Get reservation ID
+            reservation_id = reservation_data.get('reservation_id', self.generate_reservation_id(date_str))
+            
+            # Build event details
+            event_title = f"[予約] {service} - {client_name} ({staff})"
+            
+            # Build description
+            description = f"""
+予約ID: {reservation_id}
+サービス: {service}
+担当者: {staff}
+お客様: {client_name}
+所要時間: {duration_minutes}分
+予約元: LINE Bot
+            """.strip()
+            
+            # Create event
+            event = {
+                'summary': event_title,
+                'description': description,
+                'start': {
+                    'dateTime': start_iso,
+                    'timeZone': self.timezone,
+                },
+                'end': {
+                    'dateTime': end_iso,
+                    'timeZone': self.timezone,
+                },
+            }
+            
+            # Add staff as attendee if not "未指定"
+            if staff != "未指定":
+                staff_email = self._get_staff_email(staff)
+                if staff_email:
+                    event['attendees'] = [{'email': staff_email}]
+            
+            # Create the event
+            created_event = self.service.events().insert(
+                calendarId=self.calendar_id,
+                body=event
+            ).execute()
+            
+            logging.info(f"Calendar event created: {created_event.get('htmlLink')}")
+            return True
+            
+        except HttpError as e:
+            logging.error(f"Google Calendar API error: {e}")
+            return False
+        except Exception as e:
+            logging.error(f"Failed to create calendar event: {e}")
+            return False
 
     def _get_service_duration_minutes(self, service_name: str) -> int:
         """Return duration in minutes for a given service name."""
@@ -364,7 +446,6 @@ class GoogleCalendarHelper:
                     available_periods = self._find_available_periods(
                         current_date, business_period, date_events
                     )
-                    print("available_periods in", current_date, ":", available_periods)
                     # Add available periods as slots
                     for period in available_periods:
                         slots.append({
