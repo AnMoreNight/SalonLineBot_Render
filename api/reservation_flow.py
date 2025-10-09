@@ -274,12 +274,11 @@ class ReservationFlow:
         self.user_states[user_id]["data"]["date"] = selected_date
         self.user_states[user_id]["step"] = "time_selection"
         
-        # Get available times for selected date from Google Calendar
+        # Get available time periods for selected date from Google Calendar
         available_slots = self._get_available_slots(selected_date)
-        available_times = [slot["time"] for slot in available_slots 
-                          if slot["available"]]
+        available_periods = [slot for slot in available_slots if slot["available"]]
         
-        if not available_times:
+        if not available_periods:
             # No available slots for selected date - return to date selection
             self.user_states[user_id]["step"] = "date_selection"
             return f"""申し訳ございませんが、{selected_date}は空いている時間がありません。
@@ -297,12 +296,20 @@ class ReservationFlow:
 
 ❌ 予約をキャンセルする場合は「キャンセル」と送信"""
         
+        # Format available periods for display
+        period_strings = []
+        for period in available_periods:
+            start_time = period["time"]
+            end_time = period["end_time"]
+            period_strings.append(f"・{start_time}~{end_time}")
+        
         return f"""{selected_date}ですね！
 空いている時間帯は以下の通りです：
 
-{chr(10).join([f"・{time}" for time in available_times])}
+{chr(10).join(period_strings)}
 
-ご希望の時間をお送りください。
+ご希望の開始時間と終了時間をお送りください。
+例）10:00~11:00 または 10:00 11:00
 
 ※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
     
@@ -315,82 +322,40 @@ class ReservationFlow:
         
         selected_date = self.user_states[user_id]["data"]["date"]
         available_slots = self._get_available_slots(selected_date)
-        available_times = [slot["time"] for slot in available_slots 
-                         if slot["available"]]
+        available_periods = [slot for slot in available_slots if slot["available"]]
 
-        # Normalize the input message
-        normalized_message = message.strip()
+        # Parse start and end times from user input
+        start_time, end_time = self._parse_time_range(message.strip())
         
-        # Check if input is a valid time format
-        is_valid_time = False
-        selected_time = None
-        
-        # Convert various time formats to standard HH:MM:SS format
-        # Handle "10時" -> "10:00:00"
-        if re.match(r'^(\d{1,2})時$', normalized_message):
-            hour = int(re.match(r'^(\d{1,2})時$', normalized_message).group(1))
-            if 0 <= hour <= 23:
-                normalized_message = f"{hour:02d}:00:00"
-                is_valid_time = True
-        # Handle "10時30分" -> "10:30:00"
-        elif re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message):
-            match = re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message)
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}:00"
-                is_valid_time = True
-        # Handle "10" -> "10:00:00"
-        elif re.match(r'^(\d{1,2})$', normalized_message):
-            hour = int(re.match(r'^(\d{1,2})$', normalized_message).group(1))
-            if 0 <= hour <= 23:
-                normalized_message = f"{hour:02d}:00:00"
-                is_valid_time = True
-        # Handle "10:30" or "10:30分" -> "10:30:00"
-        elif re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message):
-            match = re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message)
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}:00"
-                is_valid_time = True
-        # Handle "10：30" (full-width colon) -> "10:30:00"
-        elif re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message):
-            match = re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message)
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}:00"
-                is_valid_time = True
-        # Handle "10:30:00" format (already with seconds)
-        elif re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', normalized_message):
-            match = re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', normalized_message)
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            second = int(match.group(3))
-            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}:{second:02d}"
-                is_valid_time = True
-        
-        # If input is not a valid time format, return error message
-        if not is_valid_time:
+        if not start_time or not end_time:
             return """時間の入力形式が正しくありません。
 
 正しい入力例：
-・10時
-・15時30分
-・14:00
-・9
+・10:00~11:00
+・10:00 11:00
+・10時~11時
+・10時 11時
 
 上記の空き時間からお選びください。"""
 
-        # Check if the normalized time is available
-        if normalized_message in available_times:
-            selected_time = normalized_message
-        else:
-            return f"申し訳ございませんが、{normalized_message}は空いていません。上記の空き時間からお選びください。"
+        # Validate that the time range falls within available periods
+        is_valid_range = False
+        for period in available_periods:
+            period_start = period["time"]
+            period_end = period["end_time"]
+            
+            # Check if the entire time range is within this period
+            if period_start <= start_time and end_time <= period_end:
+                is_valid_range = True
+                break
         
-        self.user_states[user_id]["data"]["time"] = selected_time
+        if not is_valid_range:
+            return f"申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。"
+        
+        # Store both start and end times
+        self.user_states[user_id]["data"]["start_time"] = start_time
+        self.user_states[user_id]["data"]["end_time"] = end_time
+        self.user_states[user_id]["data"]["time"] = start_time  # Keep for backward compatibility
         self.user_states[user_id]["step"] = "confirmation"
         
         service = self.user_states[user_id]["data"]["service"]
@@ -399,7 +364,7 @@ class ReservationFlow:
         
         return f"""予約内容の確認です：
 
-📅 日時：{selected_date} {selected_time}
+📅 日時：{selected_date} {start_time}~{end_time}
 💇 サービス：{service}
 👨‍💼 担当者：{staff}
 ⏱️ 所要時間：{service_info['duration']}分
@@ -415,6 +380,11 @@ class ReservationFlow:
         if "はい" in message or "確定" in message or "お願い" in message:
             # Complete the reservation
             reservation_data = self.user_states[user_id]["data"].copy()
+            
+            # Generate reservation ID
+            reservation_id = self.google_calendar.generate_reservation_id(reservation_data['date'])
+            reservation_data['reservation_id'] = reservation_id
+            
             del self.user_states[user_id]  # Clear user state
             
             # Get client display name
@@ -429,9 +399,15 @@ class ReservationFlow:
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
            
+            # Get time range for display
+            time_display = reservation_data.get('start_time', reservation_data['time'])
+            if 'end_time' in reservation_data:
+                time_display = f"{reservation_data['start_time']}~{reservation_data['end_time']}"
+            
             return f"""✅ 予約が確定いたしました！
 
-📅 日時：{reservation_data['date']} {reservation_data['time']}
+🆔 予約ID：{reservation_id}
+📅 日時：{reservation_data['date']} {time_display}
 💇 サービス：{reservation_data['service']}
 👨‍💼 担当者：{reservation_data['staff']}
 
@@ -488,29 +464,28 @@ class ReservationFlow:
             return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
 
     def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
-        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM:SS.
+        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM.
         Returns dict with keys 'date' and 'time' if both found, else None.
         """
         text = text.strip()
-        # Try pattern: 2025-10-07 14:30:00
-        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})", text)
-        if match:
-            date_part = match.group(1)
-            hour = int(match.group(2))
-            minute = int(match.group(3))
-            second = int(match.group(4))
-            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
-                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}:{second:02d}"}
-        
-        # Try pattern: 2025-10-07 14:30 (without seconds)
+        # Try pattern: 2025-10-07 14:30
         match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})", text)
         if match:
             date_part = match.group(1)
             hour = int(match.group(2))
             minute = int(match.group(3))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}:00"}
-
+                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
+        
+        # Try pattern: 2025-10-07 14:30:00 (with seconds) -> convert to HH:MM
+        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})", text)
+        if match:
+            date_part = match.group(1)
+            hour = int(match.group(2))
+            minute = int(match.group(3))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
+        
         # Try Japanese style like "10月7日 14時30分" → require conversion; keep simple for now
         match2 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2})時(\d{1,2})?分?", text)
         if match2:
@@ -520,9 +495,101 @@ class ReservationFlow:
             hh = int(match2.group(4))
             mm = int(match2.group(5) or 0)
             if 1 <= m <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
-                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}:00"}
+                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}"}
 
         return None
+
+    def _parse_time_range(self, text: str) -> tuple:
+        """Parse start and end times from user input.
+        Returns tuple of (start_time, end_time) in HH:MM format, or (None, None) if invalid.
+        """
+        text = text.strip()
+        
+        # Helper function to normalize time to HH:MM format
+        def normalize_time(time_str):
+            time_str = time_str.strip()
+            
+            # Handle "10時" -> "10:00"
+            if re.match(r'^(\d{1,2})時$', time_str):
+                hour = int(re.match(r'^(\d{1,2})時$', time_str).group(1))
+                if 0 <= hour <= 23:
+                    return f"{hour:02d}:00"
+            
+            # Handle "10時30分" -> "10:30"
+            elif re.match(r'^(\d{1,2})時(\d{1,2})分?$', time_str):
+                match = re.match(r'^(\d{1,2})時(\d{1,2})分?$', time_str)
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return f"{hour:02d}:{minute:02d}"
+            
+            # Handle "10" -> "10:00"
+            elif re.match(r'^(\d{1,2})$', time_str):
+                hour = int(re.match(r'^(\d{1,2})$', time_str).group(1))
+                if 0 <= hour <= 23:
+                    return f"{hour:02d}:00"
+            
+            # Handle "10:30" or "10:30分" -> "10:30"
+            elif re.match(r'^(\d{1,2}):(\d{1,2})分?$', time_str):
+                match = re.match(r'^(\d{1,2}):(\d{1,2})分?$', time_str)
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return f"{hour:02d}:{minute:02d}"
+            
+            # Handle "10：30" (full-width colon) -> "10:30"
+            elif re.match(r'^(\d{1,2})：(\d{1,2})分?$', time_str):
+                match = re.match(r'^(\d{1,2})：(\d{1,2})分?$', time_str)
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return f"{hour:02d}:{minute:02d}"
+            
+            # Handle "10:30:00" format (with seconds) -> "10:30"
+            elif re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', time_str):
+                match = re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', time_str)
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return f"{hour:02d}:{minute:02d}"
+            
+            return None
+        
+        # Try different patterns for time range input
+        
+        # Pattern 1: "10:00~11:00" or "10:00～11:00"
+        match = re.search(r'^(\d{1,2}[:：]\d{1,2}[分]?)[~～](\d{1,2}[:：]\d{1,2}[分]?)$', text)
+        if match:
+            start_time = normalize_time(match.group(1))
+            end_time = normalize_time(match.group(2))
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 2: "10:00 11:00" (space separated)
+        match = re.search(r'^(\d{1,2}[:：]\d{1,2}[分]?)\s+(\d{1,2}[:：]\d{1,2}[分]?)$', text)
+        if match:
+            start_time = normalize_time(match.group(1))
+            end_time = normalize_time(match.group(2))
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 3: "10時~11時" or "10時～11時"
+        match = re.search(r'^(\d{1,2}時\d{1,2}分?)[~～](\d{1,2}時\d{1,2}分?)$', text)
+        if match:
+            start_time = normalize_time(match.group(1))
+            end_time = normalize_time(match.group(2))
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 4: "10時 11時" (space separated)
+        match = re.search(r'^(\d{1,2}時\d{1,2}分?)\s+(\d{1,2}時\d{1,2}分?)$', text)
+        if match:
+            start_time = normalize_time(match.group(1))
+            end_time = normalize_time(match.group(2))
+            if start_time and end_time:
+                return start_time, end_time
+        
+        return None, None
 
     def _handle_modify_request(self, user_id: str, message: str) -> str:
         """Modify existing reservation time via Google Calendar.
@@ -535,12 +602,12 @@ class ReservationFlow:
         if not state or state.get("step") not in ["modify_waiting", "modify_provide_time"]:
             # Start modify flow
             self.user_states[user_id] = {"step": "modify_waiting"}
-            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM:SS\" の形式でお送りください。\n例）2025-10-07 14:30:00"
+            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
 
         # Try to parse date/time from message
         parsed = self._parse_datetime_from_text(message)
         if not parsed:
-            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM:SS\" の形式でお送りください。\n例）2025-10-07 14:30:00"
+            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
 
         new_date = parsed["date"]
         new_time = parsed["time"]

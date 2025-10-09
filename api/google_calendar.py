@@ -55,12 +55,24 @@ class GoogleCalendarHelper:
             logging.error(f"Failed to authenticate with Google Calendar: {e}")
             self.service = None
     
+    def generate_reservation_id(self, date_str: str) -> str:
+        """Generate a unique reservation ID in format RES-YYYYMMDD-XXXX"""
+        # Extract date components
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        date_part = date_obj.strftime("%Y%m%d")
+        
+        # For simplicity, use timestamp-based counter (in real app, use database counter)
+        import time
+        counter = int(time.time() * 1000) % 10000  # Last 4 digits of timestamp
+        
+        return f"RES-{date_part}-{counter:04d}"
+    
     def create_reservation_event(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """
         Create a calendar event for a completed reservation
         
         Args:
-            reservation_data: Dict containing service, staff, date, time
+            reservation_data: Dict containing service, staff, date, time, reservation_id
             client_name: Client's display name from LINE
             
         Returns:
@@ -180,28 +192,35 @@ class GoogleCalendarHelper:
         try:
             # Parse date and time
             date_str = reservation_data['date']
-            time_str = reservation_data['time']
             service = reservation_data['service']
             staff = reservation_data['staff']
             
-            # Calculate start datetime
-            start_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+            # Handle both single time and time range
+            if 'start_time' in reservation_data and 'end_time' in reservation_data:
+                start_time_str = reservation_data['start_time']
+                end_time_str = reservation_data['end_time']
+                
+                # Calculate start and end datetime
+                start_datetime = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M")
+                end_datetime = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M")
+            else:
+                # Fallback to single time (backward compatibility)
+                time_str = reservation_data['time']
+                start_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                
+                # Get service duration and calculate end time
+                duration_minutes = self._get_service_duration_minutes(service)
+                end_datetime = start_datetime + timedelta(minutes=duration_minutes)
             
-            # Get service duration (in minutes)
-            service_durations = {
-                "カット": 60,
-                "カラー": 120,
-                "パーマ": 150,
-                "トリートメント": 90
-            }
-            duration_minutes = service_durations.get(service, 60)
-            
-            # Calculate end datetime
-            end_datetime = start_datetime + timedelta(minutes=duration_minutes)
+            # Calculate duration for display purposes
+            duration_minutes = int((end_datetime - start_datetime).total_seconds() / 60)
             
             # Format for Google Calendar API
             start_iso = start_datetime.isoformat()
             end_iso = end_datetime.isoformat()
+            
+            # Get reservation ID
+            reservation_id = reservation_data.get('reservation_id', self.generate_reservation_id(date_str))
             
             # Build event details
             event_title = f"[予約] {service} - {client_name} ({staff})"
@@ -211,6 +230,7 @@ class GoogleCalendarHelper:
             
             # Build description
             description = f"""
+予約ID: {reservation_id}
 サービス: {service}
 担当者: {staff}
 お客様: {client_name}
@@ -314,53 +334,97 @@ class GoogleCalendarHelper:
             return self._generate_fallback_slots(start_date, end_date)
     
     def _generate_all_slots(self, start_date: datetime, end_date: datetime, events: list = None) -> list:
-        """Generate only unselected (available) time slots for the given date range"""
+        """Generate available time periods based on gaps between existing reservations"""
         slots = []
         current_date = start_date.date()
         end_date_only = end_date.date()
         
-        # Business hours: 9:00 to 17:00 (9 AM to 5 PM)
-        business_hours = list(range(9, 18))  # 9:00 to 17:00
+        # Business hours: 9:00~12:00, 13:00~18:00 (skip 12:00~13:00 lunch break)
+        business_periods = [
+            {"start": 9, "end": 12},   # 9:00 ~ 12:00
+            {"start": 13, "end": 18}   # 13:00 ~ 18:00
+        ]
         
         while current_date <= end_date_only:
             # Skip Sundays (weekday 6)
             if current_date.weekday() != 6:
-                for hour in business_hours:
-                    # Skip lunch break (12:00-13:00)
-                    if hour == 12:
-                        continue
+                # Get events for this specific date
+                date_events = []
+                if events:
+                    for event in events:
+                        event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
+                        if event_start.date() == current_date:
+                            date_events.append(event)
+                
+                # Sort events by start time
+                date_events.sort(key=lambda e: datetime.fromisoformat(e['start'].get('dateTime', e['start'].get('date', ''))))
+                
+                # Find available periods for each business period
+                for business_period in business_periods:
+                    available_periods = self._find_available_periods(
+                        current_date, business_period, date_events
+                    )
                     
-                    slot_start = datetime.combine(current_date, datetime.min.time().replace(hour=hour))
-                    slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
-                    
-                    # Make slot times timezone-aware using the configured timezone
-                    tz = pytz.timezone(self.timezone)
-                    slot_start = tz.localize(slot_start)
-                    slot_end = tz.localize(slot_end)
-                    
-                    # Check if slot conflicts with any event
-                    is_available = True
-                    if events:
-                        for event in events:
-                            event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
-                            event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
-                            
-                            # Check for overlap
-                            if (slot_start < event_end and slot_end > event_start):
-                                is_available = False
-                                break
-                    
-                    # Only add available slots
-                    if is_available:
+                    # Add available periods as slots
+                    for period in available_periods:
                         slots.append({
                             "date": current_date.strftime("%Y-%m-%d"),
-                            "time": f"{hour:02d}:00:00",
+                            "time": period["start_time"],
+                            "end_time": period["end_time"],
                             "available": True
                         })
             
             current_date += timedelta(days=1)
         
         return slots
+    
+    def _find_available_periods(self, date, business_period, events):
+        """Find available time periods within business hours, excluding existing events"""
+        available_periods = []
+        
+        # Convert business period to datetime objects
+        tz = pytz.timezone(self.timezone)
+        business_start = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
+        business_end = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["end"])))
+        
+        # Convert events to datetime ranges
+        event_ranges = []
+        for event in events:
+            event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
+            event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
+            
+            # Only consider events that overlap with business hours
+            if event_start < business_end and event_end > business_start:
+                event_ranges.append({
+                    'start': max(event_start, business_start),
+                    'end': min(event_end, business_end)
+                })
+        
+        # Sort event ranges by start time
+        event_ranges.sort(key=lambda x: x['start'])
+        
+        # Find gaps between events
+        current_time = business_start
+        
+        for event_range in event_ranges:
+            # If there's a gap before this event, it's available
+            if current_time < event_range['start']:
+                available_periods.append({
+                    'start_time': current_time.strftime("%H:%M"),
+                    'end_time': event_range['start'].strftime("%H:%M")
+                })
+            
+            # Move current time to end of this event
+            current_time = max(current_time, event_range['end'])
+        
+        # If there's time left after the last event, it's available
+        if current_time < business_end:
+            available_periods.append({
+                'start_time': current_time.strftime("%H:%M"),
+                'end_time': business_end.strftime("%H:%M")
+            })
+        
+        return available_periods
     
     def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
         """Generate fallback slots when Google Calendar is not available"""
