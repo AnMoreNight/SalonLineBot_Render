@@ -91,6 +91,7 @@ class ReservationFlow:
         calendar_message += "2️⃣ 空いている日付を確認\n"
         calendar_message += "3️⃣ 希望の日付を「YYYY-MM-DD」形式で送信\n"
         calendar_message += "📝 例：`2025-01-15`\n\n"
+        calendar_message += "💡 **サービスを変更したい場合は「サービス変更」とお送りください**\n"
         calendar_message += "❌ 予約をキャンセルする場合は「キャンセル」と送信"
         
         return calendar_message
@@ -228,7 +229,8 @@ class ReservationFlow:
 
 美容師名をお送りください。
 
-※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+💡 **サービスを変更したい場合は「サービス変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください。"""
     
     def _handle_staff_selection(self, user_id: str, message: str) -> str:
         """Handle staff selection"""
@@ -236,6 +238,11 @@ class ReservationFlow:
         if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
+        # Check for navigation to service selection
+        if message.lower() in ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]:
+            self.user_states[user_id]["step"] = "service_selection"
+            return self._start_reservation(user_id)
         
         selected_staff = None
         message_lower = message.lower()
@@ -273,6 +280,11 @@ class ReservationFlow:
         if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
+        # Check for navigation to service selection
+        if message.lower() in ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]:
+            self.user_states[user_id]["step"] = "service_selection"
+            return self._start_reservation(user_id)
         
         # Parse date from calendar template response
         selected_date = None
@@ -350,7 +362,8 @@ class ReservationFlow:
 ご希望の開始時間と終了時間をお送りください。
 例）10:00~11:00 または 10:00 11:00
 
-※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
     
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
@@ -358,6 +371,11 @@ class ReservationFlow:
         if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+        
+        # Check for navigation to date selection
+        if message.lower() in ["日付変更", "日付を変更", "別の日", "他の日", "日付選択", "日付に戻る"]:
+            self.user_states[user_id]["step"] = "date_selection"
+            return self._create_calendar_template()
         
         selected_date = self.user_states[user_id]["data"]["date"]
         available_slots = self._get_available_slots(selected_date)
@@ -375,7 +393,10 @@ class ReservationFlow:
 ・10時~11時
 ・10時 11時
 
-上記の空き時間からお選びください。"""
+上記の空き時間からお選びください。
+
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
 
         # Validate that start time is before end time
         if start_time >= end_time:
@@ -401,7 +422,9 @@ class ReservationFlow:
 開始時間は終了時間より早い時間を選択してください。
 
 例）10:00~11:00（開始時間 < 終了時間）
-※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
 
         # Validate that the time range falls within available periods
         is_valid_range = False
@@ -415,7 +438,10 @@ class ReservationFlow:
                 break
         
         if not is_valid_range:
-            return f"申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。"
+            return f"""申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。
+
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Validate that the selected time period is sufficient for the service
         service = self.user_states[user_id]["data"]["service"]
@@ -447,7 +473,9 @@ class ReservationFlow:
 {service}には最低{required_duration}分必要です。上記の空き時間から{required_duration}分以上の時間を選択してください。
 
 例）{required_duration}分以上の時間帯を選択
-※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Store both start and end times
         self.user_states[user_id]["data"]["start_time"] = start_time
