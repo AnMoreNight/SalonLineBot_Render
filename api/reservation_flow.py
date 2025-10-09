@@ -280,7 +280,22 @@ class ReservationFlow:
                           if slot["available"]]
         
         if not available_times:
-            return f"申し訳ございませんが、{selected_date}は空いている時間がありません。他の日付をお選びください。"
+            # No available slots for selected date - return to date selection
+            self.user_states[user_id]["step"] = "date_selection"
+            return f"""申し訳ございませんが、{selected_date}は空いている時間がありません。
+
+他の日付をお選びください。
+
+📅 **Googleカレンダーで空き状況を確認してください：**
+🔗 {self.google_calendar.get_calendar_url()}
+
+💡 **手順：**
+1️⃣ 上記リンクをクリックしてGoogleカレンダーを開く
+2️⃣ 空いている日付を確認
+3️⃣ 希望の日付を「YYYY-MM-DD」形式で送信
+📝 例：`2025-01-15`
+
+❌ 予約をキャンセルする場合は「キャンセル」と送信"""
         
         return f"""{selected_date}ですね！
 空いている時間帯は以下の通りです：
@@ -310,42 +325,51 @@ class ReservationFlow:
         is_valid_time = False
         selected_time = None
         
-        # Convert various time formats to standard HH:MM format
-        # Handle "10時" -> "10:00"
+        # Convert various time formats to standard HH:MM:SS format
+        # Handle "10時" -> "10:00:00"
         if re.match(r'^(\d{1,2})時$', normalized_message):
             hour = int(re.match(r'^(\d{1,2})時$', normalized_message).group(1))
             if 0 <= hour <= 23:
-                normalized_message = f"{hour:02d}:00"
+                normalized_message = f"{hour:02d}:00:00"
                 is_valid_time = True
-        # Handle "10時30分" -> "10:30"
+        # Handle "10時30分" -> "10:30:00"
         elif re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message):
             match = re.match(r'^(\d{1,2})時(\d{1,2})分?$', normalized_message)
             hour = int(match.group(1))
             minute = int(match.group(2))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}"
+                normalized_message = f"{hour:02d}:{minute:02d}:00"
                 is_valid_time = True
-        # Handle "10" -> "10:00"
+        # Handle "10" -> "10:00:00"
         elif re.match(r'^(\d{1,2})$', normalized_message):
             hour = int(re.match(r'^(\d{1,2})$', normalized_message).group(1))
             if 0 <= hour <= 23:
-                normalized_message = f"{hour:02d}:00"
+                normalized_message = f"{hour:02d}:00:00"
                 is_valid_time = True
-        # Handle "10:30" or "10:30分" -> "10:30"
+        # Handle "10:30" or "10:30分" -> "10:30:00"
         elif re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message):
             match = re.match(r'^(\d{1,2}):(\d{1,2})分?$', normalized_message)
             hour = int(match.group(1))
             minute = int(match.group(2))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}"
+                normalized_message = f"{hour:02d}:{minute:02d}:00"
                 is_valid_time = True
-        # Handle "10：30" (full-width colon)
+        # Handle "10：30" (full-width colon) -> "10:30:00"
         elif re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message):
             match = re.match(r'^(\d{1,2})：(\d{1,2})分?$', normalized_message)
             hour = int(match.group(1))
             minute = int(match.group(2))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                normalized_message = f"{hour:02d}:{minute:02d}"
+                normalized_message = f"{hour:02d}:{minute:02d}:00"
+                is_valid_time = True
+        # Handle "10:30:00" format (already with seconds)
+        elif re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', normalized_message):
+            match = re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', normalized_message)
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            second = int(match.group(3))
+            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                normalized_message = f"{hour:02d}:{minute:02d}:{second:02d}"
                 is_valid_time = True
         
         # If input is not a valid time format, return error message
@@ -464,18 +488,28 @@ class ReservationFlow:
             return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
 
     def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
-        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM.
+        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM:SS.
         Returns dict with keys 'date' and 'time' if both found, else None.
         """
         text = text.strip()
-        # Try pattern: 2025-10-07 14:30
+        # Try pattern: 2025-10-07 14:30:00
+        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})", text)
+        if match:
+            date_part = match.group(1)
+            hour = int(match.group(2))
+            minute = int(match.group(3))
+            second = int(match.group(4))
+            if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}:{second:02d}"}
+        
+        # Try pattern: 2025-10-07 14:30 (without seconds)
         match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})", text)
         if match:
             date_part = match.group(1)
             hour = int(match.group(2))
             minute = int(match.group(3))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
+                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}:00"}
 
         # Try Japanese style like "10月7日 14時30分" → require conversion; keep simple for now
         match2 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2})時(\d{1,2})?分?", text)
@@ -486,7 +520,7 @@ class ReservationFlow:
             hh = int(match2.group(4))
             mm = int(match2.group(5) or 0)
             if 1 <= m <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
-                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}"}
+                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}:00"}
 
         return None
 
@@ -501,12 +535,12 @@ class ReservationFlow:
         if not state or state.get("step") not in ["modify_waiting", "modify_provide_time"]:
             # Start modify flow
             self.user_states[user_id] = {"step": "modify_waiting"}
-            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
+            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM:SS\" の形式でお送りください。\n例）2025-10-07 14:30:00"
 
         # Try to parse date/time from message
         parsed = self._parse_datetime_from_text(message)
         if not parsed:
-            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
+            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM:SS\" の形式でお送りください。\n例）2025-10-07 14:30:00"
 
         new_date = parsed["date"]
         new_time = parsed["time"]

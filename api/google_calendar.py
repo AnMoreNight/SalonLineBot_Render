@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
+import pytz
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -332,6 +333,11 @@ class GoogleCalendarHelper:
                     slot_start = datetime.combine(current_date, datetime.min.time().replace(hour=hour))
                     slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
                     
+                    # Make slot times timezone-aware using the configured timezone
+                    tz = pytz.timezone(self.timezone)
+                    slot_start = tz.localize(slot_start)
+                    slot_end = tz.localize(slot_end)
+                    
                     # Check if slot conflicts with any event
                     is_available = True
                     if events:
@@ -348,7 +354,7 @@ class GoogleCalendarHelper:
                     if is_available:
                         slots.append({
                             "date": current_date.strftime("%Y-%m-%d"),
-                            "time": f"{hour:02d}:00",
+                            "time": f"{hour:02d}:00:00",
                             "available": True
                         })
             
@@ -377,3 +383,4 @@ class GoogleCalendarHelper:
             "山田": os.getenv("STAFF_YAMADA_EMAIL"),
         }
         return staff_emails.get(staff_name)
+
