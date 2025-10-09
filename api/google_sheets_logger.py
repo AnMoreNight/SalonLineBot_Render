@@ -248,8 +248,14 @@ class GoogleSheetsLogger:
         ]
         
         try:
-            worksheet.append_row(headers)
-            logging.info("Reservations worksheet headers setup completed")
+            # Check if headers already exist
+            existing_records = worksheet.get_all_records()
+            if not existing_records:
+                # Only add headers if worksheet is empty
+                worksheet.append_row(headers)
+                logging.info("Reservations worksheet headers setup completed")
+            else:
+                logging.info("Reservations worksheet headers already exist")
         except Exception as e:
             logging.error(f"Failed to setup reservations headers: {e}")
     
@@ -288,7 +294,21 @@ class GoogleSheetsLogger:
             return []
         
         try:
-            records = reservations_worksheet.get_all_records()
+            # Define expected headers to avoid duplicate header issues
+            expected_headers = [
+                "Reservation ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
+            records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
             # Filter out header row and return only confirmed reservations
             reservations = []
             for record in records:
@@ -323,8 +343,22 @@ class GoogleSheetsLogger:
             return False
         
         try:
+            # Define expected headers to avoid duplicate header issues
+            expected_headers = [
+                "Reservation ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
             # Find the row with the reservation ID
-            records = reservations_worksheet.get_all_records()
+            records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
             for i, record in enumerate(records, 2):  # Start from row 2 (skip header)
                 if record.get("Reservation ID") == reservation_id:
                     # Update the status in column J (10th column)
@@ -338,9 +372,3 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Failed to update reservation status: {e}")
             return False
-
-
-if __name__ == "__main__":
-    # Test the Google Sheets logger
-    logger = GoogleSheetsLogger()
-    print("Google Sheets Logger test completed")
