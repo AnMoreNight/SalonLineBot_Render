@@ -364,13 +364,13 @@ class GoogleCalendarHelper:
                     available_periods = self._find_available_periods(
                         current_date, business_period, date_events
                     )
-                    
+                    print("available_periods in", current_date, ":", available_periods)
                     # Add available periods as slots
                     for period in available_periods:
                         slots.append({
                             "date": current_date.strftime("%Y-%m-%d"),
-                            "time": period["start_time"],
-                            "end_time": period["end_time"],
+                            "time": period["start"],
+                            "end_time": period["end"],
                             "available": True
                         })
             
@@ -384,44 +384,38 @@ class GoogleCalendarHelper:
         
         # Convert business period to datetime objects
         tz = pytz.timezone(self.timezone)
-        business_start = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
+        business_start = business_start_event= tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
         business_end = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["end"])))
         
-        # Convert events to datetime ranges
-        event_ranges = []
+        # Convert events to datetime ranges and merge overlapping ones
+        available_periods = []
         for event in events:
             event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
             event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
             
-            # Only consider events that overlap with business hours
-            if event_start < business_end and event_end > business_start:
-                event_ranges.append({
-                    'start': max(event_start, business_start),
-                    'end': min(event_end, business_end)
-                })
-        
-        # Sort event ranges by start time
-        event_ranges.sort(key=lambda x: x['start'])
-        
-        # Find gaps between events
-        current_time = business_start
-        
-        for event_range in event_ranges:
-            # If there's a gap before this event, it's available
-            if current_time < event_range['start']:
-                available_periods.append({
-                    'start_time': current_time.strftime("%H:%M"),
-                    'end_time': event_range['start'].strftime("%H:%M")
-                })
-            
-            # Move current time to end of this event
-            current_time = max(current_time, event_range['end'])
-        
-        # If there's time left after the last event, it's available
-        if current_time < business_end:
+            # # Only consider events that overlap with business hours
+            # if event_start < business_end and event_end > business_start_event:
+            #     event_ranges.append({
+            #         'start': event_start,
+            #         'end': event_end
+            #     })
+            #     business_start_event = tz.localize(event_end) if event_end.tzinfo is None else event_end
+            # # print("event_ranges in", date, ":", event_start, event_end, ":", event_ranges)
+
+            if event_start < business_end and event_end > business_start_event:
+                if event_start > business_start:
+                    available_periods.append({
+                        'start': business_start_event,
+                        'end': event_start
+                    })
+                    business_start_event = tz.localize(event_end) if event_start.tzinfo is None else event_end
+                elif event_start == business_start_event:
+                    business_start_event = tz.localize(event_end) if event_end.tzinfo is None else event_end
+
+        if business_start_event < business_end:
             available_periods.append({
-                'start_time': current_time.strftime("%H:%M"),
-                'end_time': business_end.strftime("%H:%M")
+                'start': business_start_event,
+                'end': business_end
             })
         
         return available_periods
