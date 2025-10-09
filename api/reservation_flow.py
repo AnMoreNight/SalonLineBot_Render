@@ -19,6 +19,13 @@ class ReservationFlow:
         self.services_data = self._load_services_data()
         self.services = self.services_data.get("services", {})
         self.staff_members = self.services_data.get("staff", {})
+        
+        # Load keywords from JSON
+        self.keywords_data = self._load_keywords_data()
+        self.intent_keywords = self.keywords_data.get("intent_keywords", {})
+        self.navigation_keywords = self.keywords_data.get("navigation_keywords", {})
+        self.staff_keywords = self.keywords_data.get("staff_keywords", {})
+        self.confirmation_keywords = self.keywords_data.get("confirmation_keywords", {})
     
     def _load_services_data(self) -> Dict[str, Any]:
         """Load services and staff data from JSON file"""
@@ -44,6 +51,40 @@ class ReservationFlow:
                     "佐藤": {"name": "佐藤", "specialty": "パーマ・トリートメント", "experience": "3年", "email_env": "STAFF_SATO_EMAIL"},
                     "山田": {"name": "山田", "specialty": "カット・カラー・パーマ", "experience": "8年", "email_env": "STAFF_YAMADA_EMAIL"},
                     "未指定": {"name": "未指定", "specialty": "全般", "experience": "担当者決定", "email_env": None}
+                }
+            }
+    
+    def _load_keywords_data(self) -> Dict[str, Any]:
+        """Load keywords data from JSON file"""
+        try:
+            # Get the directory of this file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            keywords_file = os.path.join(current_dir, "data", "keywords.json")
+            
+            with open(keywords_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load keywords data: {e}")
+            # Return default data if file loading fails
+            return {
+                "intent_keywords": {
+                    "reservation": ["予約", "予約したい", "予約お願い", "予約できますか"],
+                    "modify": ["予約変更", "予約修正"],
+                    "cancel": ["キャンセル", "取り消し", "やめる", "中止"]
+                },
+                "navigation_keywords": {
+                    "date_change": ["日付変更", "日付を変更", "別の日", "他の日", "日付選択", "日付に戻る"],
+                    "service_change": ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]
+                },
+                "staff_keywords": {
+                    "田中": ["田中"],
+                    "佐藤": ["佐藤"],
+                    "山田": ["山田"],
+                    "未指定": ["未指定", "担当者", "美容師"]
+                },
+                "confirmation_keywords": {
+                    "yes": ["はい", "確定", "お願い"],
+                    "no": ["いいえ", "キャンセル", "やめる"]
                 }
             }
     
@@ -110,21 +151,10 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
         
-        # Reservation intent keywords (only when not in flow)
-        reservation_keywords = [
-            "予約", "予約したい", "予約お願い", "予約できますか",
-            "空いてる", "空き", "時間", "いつ", "可能"
-        ]
-        
-        # Cancel intent keywords
-        cancel_keywords = [
-            "キャンセル", "取り消し", "やめる", "中止"
-        ]
-        
-        # Modify intent keywords
-        modify_keywords = [
-            "予約変更", "変更", "修正", "時間変更", "日時変更", "予約修正"
-        ]
+        # Get keywords from JSON data
+        reservation_keywords = self.intent_keywords.get("reservation", [])
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        modify_keywords = self.intent_keywords.get("modify", [])
         
         # Priority order: reservation > service_selection > staff_selection > modify > cancel
         if any(keyword in message_lower for keyword in reservation_keywords):
@@ -142,7 +172,8 @@ class ReservationFlow:
             self.user_states[user_id] = {"step": "start", "data": {}}
         
         # Check for cancellation at any step
-        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        if message.lower() in cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -189,7 +220,8 @@ class ReservationFlow:
     def _handle_service_selection(self, user_id: str, message: str) -> str:
         """Handle service selection"""
         # Check for cancellation first
-        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        if message.lower() in cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -235,30 +267,23 @@ class ReservationFlow:
     def _handle_staff_selection(self, user_id: str, message: str) -> str:
         """Handle staff selection"""
         # Check for cancellation first
-        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        if message.lower() in cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to service selection
-        if message.lower() in ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]:
+        service_change_keywords = self.navigation_keywords.get("service_change", [])
+        if message.lower() in service_change_keywords:
             self.user_states[user_id]["step"] = "service_selection"
             return self._start_reservation(user_id)
         
         selected_staff = None
         message_lower = message.lower()
         
-        # Staff matching
-        staff_mapping = {
-            "田中": "田中",
-            "佐藤": "佐藤", 
-            "山田": "山田",
-            "未指定": "未指定",
-            "担当者": "未指定",
-            "美容師": "未指定"
-        }
-        
-        for keyword, staff_name in staff_mapping.items():
-            if keyword in message_lower:
+        # Staff matching using JSON keywords
+        for staff_name, keywords in self.staff_keywords.items():
+            if any(keyword in message_lower for keyword in keywords):
                 selected_staff = staff_name
                 break
         
@@ -277,12 +302,14 @@ class ReservationFlow:
     def _handle_date_selection(self, user_id: str, message: str) -> str:
         """Handle date selection from calendar template"""
         # Check for cancellation first
-        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        if message.lower() in cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to service selection
-        if message.lower() in ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]:
+        service_change_keywords = self.navigation_keywords.get("service_change", [])
+        if message.lower() in service_change_keywords:
             self.user_states[user_id]["step"] = "service_selection"
             return self._start_reservation(user_id)
         
@@ -368,12 +395,14 @@ class ReservationFlow:
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
         # Check for cancellation first
-        if message.lower() in ["キャンセル", "取り消し", "やめる", "中止"]:
+        cancel_keywords = self.intent_keywords.get("cancel", [])
+        if message.lower() in cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to date selection
-        if message.lower() in ["日付変更", "日付を変更", "別の日", "他の日", "日付選択", "日付に戻る"]:
+        date_change_keywords = self.navigation_keywords.get("date_change", [])
+        if message.lower() in date_change_keywords:
             self.user_states[user_id]["step"] = "date_selection"
             return self._create_calendar_template()
         
@@ -502,7 +531,8 @@ class ReservationFlow:
 
     def _handle_confirmation(self, user_id: str, message: str) -> str:
         """Handle final confirmation"""
-        if "はい" in message or "確定" in message or "お願い" in message:
+        yes_keywords = self.confirmation_keywords.get("yes", [])
+        if any(keyword in message for keyword in yes_keywords):
             # Complete the reservation
             reservation_data = self.user_states[user_id]["data"].copy()
             
