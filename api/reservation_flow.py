@@ -101,6 +101,21 @@ class ReservationFlow:
         except (ValueError, IndexError):
             return 0
     
+    def _calculate_optimal_end_time(self, start_time: str, service_duration_minutes: int) -> str:
+        """Calculate the optimal end time based on start time and service duration"""
+        try:
+            start_hour, start_minute = map(int, start_time.split(':'))
+            start_total_minutes = start_hour * 60 + start_minute
+            
+            end_total_minutes = start_total_minutes + service_duration_minutes
+            
+            end_hour = end_total_minutes // 60
+            end_minute = end_total_minutes % 60
+            
+            return f"{end_hour:02d}:{end_minute:02d}"
+        except (ValueError, IndexError):
+            return start_time
+    
     def _get_available_slots(self, selected_date: str = None) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar for a specific date"""
         if selected_date is None:
@@ -413,6 +428,9 @@ class ReservationFlow:
         # Parse start and end times from user input
         start_time, end_time = self._parse_time_range(message.strip())
         
+        # Store original end time for potential adjustment message
+        self.user_states[user_id]["data"]["original_end_time"] = end_time
+        
         if not start_time or not end_time:
             return """時間の入力形式が正しくありません。
 
@@ -479,6 +497,26 @@ class ReservationFlow:
         
         selected_duration = self._calculate_time_duration_minutes(start_time, end_time)
         
+        # If selected duration is longer than required, automatically adjust end time
+        if selected_duration > required_duration:
+            optimal_end_time = self._calculate_optimal_end_time(start_time, required_duration)
+            
+            # Check if the optimal end time is still within available periods
+            is_optimal_valid = False
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                
+                if period_start <= start_time and optimal_end_time <= period_end:
+                    is_optimal_valid = True
+                    break
+            
+            if is_optimal_valid:
+                # Use the optimal end time
+                end_time = optimal_end_time
+                selected_duration = required_duration
+            # If optimal end time is not available, continue with original validation
+        
         if selected_duration < required_duration:
             # Return to time selection with error message
             self.user_states[user_id]["step"] = "time_selection"
@@ -516,8 +554,13 @@ class ReservationFlow:
         staff = self.user_states[user_id]["data"]["staff"]
         service_info = self.services[service]
         
-        return f"""予約内容の確認です：
-
+        # Check if end time was automatically adjusted
+        original_end_time = self.user_states[user_id]["data"].get("original_end_time")
+        adjustment_message = ""
+        if original_end_time and original_end_time != end_time:
+            adjustment_message = f"\n💡 **終了時間を{service}の所要時間に合わせて{end_time}に調整しました**\n"
+        
+        return f"""予約内容の確認です：{adjustment_message}
 📅 日時：{selected_date} {start_time}~{end_time}
 💇 サービス：{service}
 👨‍💼 担当者：{staff}
