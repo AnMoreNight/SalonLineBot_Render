@@ -19,6 +19,11 @@ class GoogleCalendarHelper:
         self.calendar_id = os.getenv("GOOGLE_CALENDAR_ID")
         self.timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "Asia/Tokyo")
         self.service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        
+        # Load services and staff data from JSON
+        self.services_data = self._load_services_data()
+        self.staff_data = self.services_data.get("staff", {})
+        self.services = self.services_data.get("services", {})
 
         self.service = None
         try:
@@ -26,6 +31,33 @@ class GoogleCalendarHelper:
         except Exception as e:
             logging.error(f"Failed to initialize Google Calendar: {e}")
             self.service = None
+    
+    def _load_services_data(self) -> Dict[str, Any]:
+        """Load services and staff data from JSON file"""
+        try:
+            # Get the directory of this file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            services_file = os.path.join(current_dir, "data", "services.json")
+            
+            with open(services_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load services data: {e}")
+            # Return default data if file loading fails
+            return {
+                "services": {
+                    "カット": {"name": "カット", "duration": 60, "price": 3000, "description": "ヘアカットサービス"},
+                    "カラー": {"name": "カラー", "duration": 120, "price": 8000, "description": "ヘアカラーサービス"},
+                    "パーマ": {"name": "パーマ", "duration": 150, "price": 12000, "description": "パーマサービス"},
+                    "トリートメント": {"name": "トリートメント", "duration": 90, "price": 5000, "description": "ヘアトリートメントサービス"}
+                },
+                "staff": {
+                    "田中": {"name": "田中", "specialty": "カット・カラー", "experience": "5年", "email_env": "STAFF_TANAKA_EMAIL"},
+                    "佐藤": {"name": "佐藤", "specialty": "パーマ・トリートメント", "experience": "3年", "email_env": "STAFF_SATO_EMAIL"},
+                    "山田": {"name": "山田", "specialty": "カット・カラー・パーマ", "experience": "8年", "email_env": "STAFF_YAMADA_EMAIL"},
+                    "未指定": {"name": "未指定", "specialty": "全般", "experience": "担当者決定", "email_env": None}
+                }
+            }
     
     def _authenticate(self):
         """Authenticate with Google Calendar API using service account"""
@@ -166,13 +198,8 @@ class GoogleCalendarHelper:
 
     def _get_service_duration_minutes(self, service_name: str) -> int:
         """Return duration in minutes for a given service name."""
-        service_durations = {
-            "カット": 60,
-            "カラー": 120,
-            "パーマ": 150,
-            "トリートメント": 90
-        }
-        return service_durations.get(service_name, 60)
+        service_data = self.services.get(service_name, {})
+        return service_data.get("duration", 60)
 
     def _find_upcoming_event_by_client(self, client_name: str, days_ahead: int = 90) -> Optional[Dict[str, Any]]:
         """Find the next upcoming event for the given client name.
@@ -507,10 +534,9 @@ class GoogleCalendarHelper:
     
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
-        staff_emails = {
-            "田中": os.getenv("STAFF_TANAKA_EMAIL"),
-            "佐藤": os.getenv("STAFF_SATO_EMAIL"),
-            "山田": os.getenv("STAFF_YAMADA_EMAIL"),
-        }
-        return staff_emails.get(staff_name)
+        staff_data = self.staff_data.get(staff_name, {})
+        email_env = staff_data.get("email_env")
+        if email_env:
+            return os.getenv(email_env)
+        return None
 

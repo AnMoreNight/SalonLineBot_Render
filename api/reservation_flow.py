@@ -2,9 +2,10 @@
 Reservation flow system with intent detection, candidate suggestions, and confirmation
 """
 import re
+import os
+import json
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
-import json
 import logging
 from api.google_calendar import GoogleCalendarHelper
 
@@ -14,19 +15,50 @@ class ReservationFlow:
         self.google_calendar = GoogleCalendarHelper()  # Initialize Google Calendar integration
         self.line_configuration = None  # Will be set from main handler
         
-        # Service and staff data for confirmation
-        self.services = {
-            "カット": {"duration": 60, "price": 3000},
-            "カラー": {"duration": 120, "price": 8000},
-            "パーマ": {"duration": 150, "price": 12000},
-            "トリートメント": {"duration": 90, "price": 5000}
-        }
-        self.staff_members = {
-            "田中": {"specialty": "カット・カラー", "experience": "5年"},
-            "佐藤": {"specialty": "パーマ・トリートメント", "experience": "3年"},
-            "山田": {"specialty": "カット・カラー・パーマ", "experience": "8年"},
-            "未指定": {"specialty": "全般", "experience": "担当者決定"}
-        }
+        # Load services and staff data from JSON
+        self.services_data = self._load_services_data()
+        self.services = self.services_data.get("services", {})
+        self.staff_members = self.services_data.get("staff", {})
+    
+    def _load_services_data(self) -> Dict[str, Any]:
+        """Load services and staff data from JSON file"""
+        try:
+            # Get the directory of this file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            services_file = os.path.join(current_dir, "data", "services.json")
+            
+            with open(services_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load services data: {e}")
+            # Return default data if file loading fails
+            return {
+                "services": {
+                    "カット": {"name": "カット", "duration": 60, "price": 3000, "description": "ヘアカットサービス"},
+                    "カラー": {"name": "カラー", "duration": 120, "price": 8000, "description": "ヘアカラーサービス"},
+                    "パーマ": {"name": "パーマ", "duration": 150, "price": 12000, "description": "パーマサービス"},
+                    "トリートメント": {"name": "トリートメント", "duration": 90, "price": 5000, "description": "ヘアトリートメントサービス"}
+                },
+                "staff": {
+                    "田中": {"name": "田中", "specialty": "カット・カラー", "experience": "5年", "email_env": "STAFF_TANAKA_EMAIL"},
+                    "佐藤": {"name": "佐藤", "specialty": "パーマ・トリートメント", "experience": "3年", "email_env": "STAFF_SATO_EMAIL"},
+                    "山田": {"name": "山田", "specialty": "カット・カラー・パーマ", "experience": "8年", "email_env": "STAFF_YAMADA_EMAIL"},
+                    "未指定": {"name": "未指定", "specialty": "全般", "experience": "担当者決定", "email_env": None}
+                }
+            }
+    
+    def _calculate_time_duration_minutes(self, start_time: str, end_time: str) -> int:
+        """Calculate duration in minutes between two time strings (HH:MM format)"""
+        try:
+            start_hour, start_minute = map(int, start_time.split(':'))
+            end_hour, end_minute = map(int, end_time.split(':'))
+            
+            start_total_minutes = start_hour * 60 + start_minute
+            end_total_minutes = end_hour * 60 + end_minute
+            
+            return end_total_minutes - start_total_minutes
+        except (ValueError, IndexError):
+            return 0
     
     def _get_available_slots(self, selected_date: str = None) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar for a specific date"""
@@ -134,13 +166,20 @@ class ReservationFlow:
     def _start_reservation(self, user_id: str) -> str:
         """Start reservation process"""
         self.user_states[user_id]["step"] = "service_selection"
-        return """ご予約ありがとうございます！
+        
+        # Generate service list from JSON data
+        service_list = []
+        for service_name, service_data in self.services.items():
+            duration = service_data.get("duration", 60)
+            price = service_data.get("price", 3000)
+            service_list.append(f"・{service_name}（{duration}分・{price:,}円）")
+        
+        services_text = "\n".join(service_list)
+        
+        return f"""ご予約ありがとうございます！
 どのサービスをご希望ですか？
 
-・カット（60分・3,000円）
-・カラー（120分・8,000円）
-・パーマ（150分・12,000円）
-・トリートメント（90分・5,000円）
+{services_text}
 
 サービス名をお送りください。
 
@@ -338,6 +377,32 @@ class ReservationFlow:
 
 上記の空き時間からお選びください。"""
 
+        # Validate that start time is before end time
+        if start_time >= end_time:
+            # Return to time selection with error message
+            self.user_states[user_id]["step"] = "time_selection"
+            
+            # Get available periods again for display
+            available_slots = self._get_available_slots(selected_date)
+            available_periods = [slot for slot in available_slots if slot["available"]]
+            
+            period_strings = []
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                period_strings.append(f"・{period_start}~{period_end}")
+            
+            return f"""申し訳ございませんが、開始時間（{start_time}）が終了時間（{end_time}）より遅いか同じです。
+
+{selected_date}の空いている時間帯は以下の通りです：
+
+{chr(10).join(period_strings)}
+
+開始時間は終了時間より早い時間を選択してください。
+
+例）10:00~11:00（開始時間 < 終了時間）
+※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
+
         # Validate that the time range falls within available periods
         is_valid_range = False
         for period in available_periods:
@@ -351,6 +416,38 @@ class ReservationFlow:
         
         if not is_valid_range:
             return f"申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。"
+        
+        # Validate that the selected time period is sufficient for the service
+        service = self.user_states[user_id]["data"]["service"]
+        service_info = self.services.get(service, {})
+        required_duration = service_info.get("duration", 60)  # Default to 60 minutes
+        
+        selected_duration = self._calculate_time_duration_minutes(start_time, end_time)
+        
+        if selected_duration < required_duration:
+            # Return to time selection with error message
+            self.user_states[user_id]["step"] = "time_selection"
+            
+            # Get available periods again for display
+            available_slots = self._get_available_slots(selected_date)
+            available_periods = [slot for slot in available_slots if slot["available"]]
+            
+            period_strings = []
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                period_strings.append(f"・{period_start}~{period_end}")
+            
+            return f"""申し訳ございませんが、選択された時間（{selected_duration}分）では{service}（{required_duration}分）のサービスが完了できません。
+
+{selected_date}の空いている時間帯は以下の通りです：
+
+{chr(10).join(period_strings)}
+
+{service}には最低{required_duration}分必要です。上記の空き時間から{required_duration}分以上の時間を選択してください。
+
+例）{required_duration}分以上の時間帯を選択
+※予約をキャンセルされる場合は「キャンセル」とお送りください。"""
         
         # Store both start and end times
         self.user_states[user_id]["data"]["start_time"] = start_time
