@@ -303,28 +303,8 @@ class GoogleCalendarHelper:
             
             events = events_result.get('items', [])
             
-            # Generate all possible slots
-            all_slots = self._generate_all_slots(start_date, end_date)
-            
-            # Filter out booked slots
-            available_slots = []
-            for slot in all_slots:
-                slot_start = datetime.strptime(f"{slot['date']} {slot['time']}", "%Y-%m-%d %H:%M")
-                slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
-                
-                # Check if slot conflicts with any event
-                is_available = True
-                for event in events:
-                    event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
-                    event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
-                    
-                    # Check for overlap
-                    if (slot_start < event_end and slot_end > event_start):
-                        is_available = False
-                        break
-                
-                if is_available:
-                    available_slots.append(slot)
+            # Generate only available (unselected) slots
+            available_slots = self._generate_all_slots(start_date, end_date, events)
             
             return available_slots
             
@@ -332,8 +312,8 @@ class GoogleCalendarHelper:
             logging.error(f"Failed to get available slots from Google Calendar: {e}")
             return self._generate_fallback_slots(start_date, end_date)
     
-    def _generate_all_slots(self, start_date: datetime, end_date: datetime) -> list:
-        """Generate all possible time slots for the given date range"""
+    def _generate_all_slots(self, start_date: datetime, end_date: datetime, events: list = None) -> list:
+        """Generate only unselected (available) time slots for the given date range"""
         slots = []
         current_date = start_date.date()
         end_date_only = end_date.date()
@@ -349,11 +329,28 @@ class GoogleCalendarHelper:
                     if hour == 12:
                         continue
                     
-                    slots.append({
-                        "date": current_date.strftime("%Y-%m-%d"),
-                        "time": f"{hour:02d}:00",
-                        "available": True
-                    })
+                    slot_start = datetime.combine(current_date, datetime.min.time().replace(hour=hour))
+                    slot_end = slot_start + timedelta(minutes=60)  # Default 60-minute slots
+                    
+                    # Check if slot conflicts with any event
+                    is_available = True
+                    if events:
+                        for event in events:
+                            event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
+                            event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
+                            
+                            # Check for overlap
+                            if (slot_start < event_end and slot_end > event_start):
+                                is_available = False
+                                break
+                    
+                    # Only add available slots
+                    if is_available:
+                        slots.append({
+                            "date": current_date.strftime("%Y-%m-%d"),
+                            "time": f"{hour:02d}:00",
+                            "available": True
+                        })
             
             current_date += timedelta(days=1)
         
@@ -361,7 +358,7 @@ class GoogleCalendarHelper:
     
     def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
         """Generate fallback slots when Google Calendar is not available"""
-        return self._generate_all_slots(start_date, end_date)
+        return self._generate_all_slots(start_date, end_date, None)
     
     def get_calendar_url(self) -> str:
         """Get the public Google Calendar URL for viewing availability"""

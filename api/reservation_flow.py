@@ -28,13 +28,23 @@ class ReservationFlow:
             "未指定": {"specialty": "全般", "experience": "担当者決定"}
         }
     
-    def _get_available_slots(self, start_date: datetime = None, days_ahead: int = 7) -> List[Dict[str, Any]]:
-        """Get available time slots from Google Calendar"""
-        if start_date is None:
-            start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    def _get_available_slots(self, selected_date: str = None) -> List[Dict[str, Any]]:
+        """Get available time slots from Google Calendar for a specific date"""
+        if selected_date is None:
+            # If no date specified, get slots for today
+            selected_date = datetime.now().strftime("%Y-%m-%d")
         
-        end_date = start_date + timedelta(days=days_ahead)
-        return self.google_calendar.get_available_slots(start_date, end_date)
+        # Convert string date to datetime objects for the specific day
+        start_date = datetime.strptime(selected_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)  # Next day at 00:00
+        
+        # Get all slots for the date range and filter for the specific date
+        all_slots = self.google_calendar.get_available_slots(start_date, end_date)
+        
+        # Filter slots for the specific date
+        date_slots = [slot for slot in all_slots if slot["date"] == selected_date]
+        
+        return date_slots
     
     def _create_calendar_template(self) -> str:
         """Create Google Calendar URL for date selection"""
@@ -265,9 +275,9 @@ class ReservationFlow:
         self.user_states[user_id]["step"] = "time_selection"
         
         # Get available times for selected date from Google Calendar
-        available_slots = self._get_available_slots()
+        available_slots = self._get_available_slots(selected_date)
         available_times = [slot["time"] for slot in available_slots 
-                          if slot["date"] == selected_date and slot["available"]]
+                          if slot["available"]]
         
         if not available_times:
             return f"申し訳ございませんが、{selected_date}は空いている時間がありません。他の日付をお選びください。"
@@ -289,9 +299,9 @@ class ReservationFlow:
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         selected_date = self.user_states[user_id]["data"]["date"]
-        available_slots = self._get_available_slots()
+        available_slots = self._get_available_slots(selected_date)
         available_times = [slot["time"] for slot in available_slots 
-                         if slot["date"] == selected_date and slot["available"]]
+                         if slot["available"]]
 
         # Normalize the input message
         normalized_message = message.strip()
