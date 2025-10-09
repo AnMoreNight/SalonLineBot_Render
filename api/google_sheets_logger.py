@@ -10,14 +10,20 @@ from dotenv import load_dotenv
 
 
 class GoogleSheetsLogger:
-    """Logger for saving bot interactions to Google Sheets"""
+    """Logger for saving bot interactions to Google Sheets
+    
+    This class handles two separate functionalities:
+    1. Message logging (saved to main Sheet1)
+    2. Reservation management (saved to separate Reservations sheet)
+    """
     
     def __init__(self):
-        self.worksheet = None
+        self.message_worksheet = None  # For message logging (Sheet1)
+        self.reservations_worksheet = None  # For reservation data (Reservations sheet)
         self._setup_connection()
     
     def _setup_connection(self):
-        """Setup Google Sheets connection"""
+        """Setup Google Sheets connection for both message logging and reservations"""
         load_dotenv()
         try:
             # Get credentials from environment variable
@@ -43,28 +49,33 @@ class GoogleSheetsLogger:
             # Authorize and create client
             gc = gspread.authorize(creds)
             
-            # Get spreadsheet and worksheet
+            # Get spreadsheet
             spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
             if not spreadsheet_id:
                 logging.warning("GOOGLE_SHEET_ID not found. Google Sheets logging disabled.")
                 return
             
             spreadsheet = gc.open_by_key(spreadsheet_id)
-            self.worksheet = spreadsheet.sheet1
             
-            # Setup headers if worksheet is empty
-            if not self.worksheet.get_all_records():
-                self._setup_headers()
+            # Setup message logging worksheet (Sheet1)
+            self.message_worksheet = spreadsheet.sheet1
+            if not self.message_worksheet.get_all_records():
+                self._setup_message_headers()
+            
+            # Setup reservations worksheet (separate sheet)
+            self.reservations_worksheet = self._get_reservations_worksheet()
             
             logging.info("Google Sheets logger initialized successfully")
+            logging.info("Message logging: Sheet1, Reservation data: Reservations sheet")
             
         except Exception as e:
             logging.error(f"Failed to setup Google Sheets connection: {e}")
-            self.worksheet = None
+            self.message_worksheet = None
+            self.reservations_worksheet = None
     
-    def _setup_headers(self):
-        """Setup column headers in the worksheet"""
-        if not self.worksheet:
+    def _setup_message_headers(self):
+        """Setup column headers for message logging in Sheet1"""
+        if not self.message_worksheet:
             return
         
         headers = [
@@ -81,10 +92,10 @@ class GoogleSheetsLogger:
         ]
         
         try:
-            self.worksheet.append_row(headers)
-            logging.info("Google Sheets headers setup completed")
+            self.message_worksheet.append_row(headers)
+            logging.info("Message logging headers setup completed in Sheet1")
         except Exception as e:
-            logging.error(f"Failed to setup headers: {e}")
+            logging.error(f"Failed to setup message headers: {e}")
     
     def log_message(self, 
                    user_id: str,
@@ -96,10 +107,10 @@ class GoogleSheetsLogger:
                    reservation_data: Optional[Dict[str, Any]] = None,
                    kb_category: Optional[str] = None,
                    processing_time: Optional[float] = None):
-        """Log a message interaction to Google Sheets"""
+        """Log a message interaction to Google Sheets (Sheet1)"""
         
-        if not self.worksheet:
-            logging.warning("Google Sheets not available. Skipping log.")
+        if not self.message_worksheet:
+            logging.warning("Message logging worksheet not available. Skipping log.")
             return
         
         try:
@@ -125,12 +136,12 @@ class GoogleSheetsLogger:
                 f"{processing_time:.2f}" if processing_time else ""
             ]
             
-            # Append to worksheet
-            self.worksheet.append_row(row_data)
-            logging.info(f"Logged interaction for user {user_id} to Google Sheets")
+            # Append to message logging worksheet (Sheet1)
+            self.message_worksheet.append_row(row_data)
+            logging.info(f"Logged message interaction for user {user_id} to Sheet1")
             
         except Exception as e:
-            logging.error(f"Failed to log to Google Sheets: {e}")
+            logging.error(f"Failed to log message to Google Sheets: {e}")
     
     def log_reservation_action(self,
                              user_id: str,
@@ -191,6 +202,9 @@ class GoogleSheetsLogger:
     
     def _get_reservations_worksheet(self):
         """Get or create the reservations worksheet"""
+        if self.reservations_worksheet:
+            return self.reservations_worksheet
+            
         try:
             load_dotenv()
             credentials_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -227,6 +241,8 @@ class GoogleSheetsLogger:
                 # Setup headers for reservations
                 self._setup_reservations_headers(reservations_worksheet)
             
+            # Store the worksheet for future use
+            self.reservations_worksheet = reservations_worksheet
             return reservations_worksheet
             
         except Exception as e:

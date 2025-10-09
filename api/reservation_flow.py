@@ -7,7 +7,10 @@ import json
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
 import logging
-from api.google_calendar import GoogleCalendarHelper
+try:
+    from api.google_calendar import GoogleCalendarHelper
+except ImportError:
+    from google_calendar import GoogleCalendarHelper
 
 class ReservationFlow:
     def __init__(self):
