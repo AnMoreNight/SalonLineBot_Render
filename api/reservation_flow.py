@@ -189,9 +189,9 @@ class ReservationFlow:
         if user_id not in self.user_states:
             self.user_states[user_id] = {"step": "start", "data": {}}
         
-        # Check for cancellation at any step
-        cancel_keywords = self.intent_keywords.get("cancel", [])
-        if message.lower() in cancel_keywords:
+        # Check for flow cancellation at any step
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -210,8 +210,6 @@ class ReservationFlow:
             return self._handle_time_selection(user_id, message)
         elif step == "confirmation":
             return self._handle_confirmation(user_id, message)
-        elif step == "cancel_selection":
-            return self._handle_cancel_selection(user_id, message)
         else:
             return "予約フローに問題が発生しました。最初からやり直してください。"
     
@@ -239,9 +237,9 @@ class ReservationFlow:
     
     def _handle_service_selection(self, user_id: str, message: str) -> str:
         """Handle service selection"""
-        # Check for cancellation first
-        cancel_keywords = self.intent_keywords.get("cancel", [])
-        if message.lower() in cancel_keywords:
+        # Check for flow cancellation first
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -286,9 +284,9 @@ class ReservationFlow:
     
     def _handle_staff_selection(self, user_id: str, message: str) -> str:
         """Handle staff selection"""
-        # Check for cancellation first
-        cancel_keywords = self.intent_keywords.get("cancel", [])
-        if message.lower() in cancel_keywords:
+        # Check for flow cancellation first
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -321,9 +319,9 @@ class ReservationFlow:
     
     def _handle_date_selection(self, user_id: str, message: str) -> str:
         """Handle date selection from calendar template"""
-        # Check for cancellation first
-        cancel_keywords = self.intent_keywords.get("cancel", [])
-        if message.lower() in cancel_keywords:
+        # Check for flow cancellation first
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -414,9 +412,9 @@ class ReservationFlow:
     
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
-        # Check for cancellation first
-        cancel_keywords = self.intent_keywords.get("cancel", [])
-        if message.lower() in cancel_keywords:
+        # Check for flow cancellation first
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -656,7 +654,11 @@ class ReservationFlow:
         elif intent == "modify":
             return self._handle_modify_request(user_id, message)
         elif intent == "cancel":
-            return self._handle_cancel_request(user_id)
+            # Check if user is providing a reservation ID (starts with "RES-")
+            if message.strip().startswith("RES-"):
+                return self._handle_reservation_id_cancellation(user_id, message.strip())
+            else:
+                return self._handle_cancel_request(user_id)
         else:
             return None  # Let other systems handle this
 
@@ -692,12 +694,6 @@ class ReservationFlow:
             if not reservations:
                 return "現在、登録されているご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
             
-            # Store reservations in user state for ID selection
-            self.user_states[user_id] = {
-                "step": "cancel_selection",
-                "data": {"reservations": reservations}
-            }
-            
             # Format reservation list
             reservation_list = []
             for i, res in enumerate(reservations, 1):
@@ -719,34 +715,8 @@ class ReservationFlow:
             logging.error(f"Cancel request failed: {e}")
             return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
 
-    def _handle_cancel_selection(self, user_id: str, message: str) -> str:
-        """Handle reservation ID selection for cancellation."""
-        reservations = self.user_states[user_id]["data"].get("reservations", [])
-        
-        # Check if user wants to cancel the cancellation
-        cancel_keywords = self.confirmation_keywords.get("no", [])
-        if any(keyword in message for keyword in cancel_keywords):
-            # Clear cancel state
-            if user_id in self.user_states:
-                del self.user_states[user_id]
-            return "キャンセルを中止しました。\n他にご質問がございましたらお気軽にお声かけください。"
-        
-        # Find reservation by ID
-        reservation_id = message.strip()
-        selected_reservation = None
-        
-        for res in reservations:
-            if res["reservation_id"] == reservation_id:
-                selected_reservation = res
-                break
-        
-        if not selected_reservation:
-            return f"""予約ID「{reservation_id}」が見つかりませんでした。
-
-上記の予約一覧から正しい予約IDを入力してください。
-
-❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
-        
+    def _handle_reservation_id_cancellation(self, user_id: str, reservation_id: str) -> str:
+        """Handle direct reservation cancellation by ID"""
         try:
             # Update status in Google Sheets to "Cancelled"
             from google_sheets_logger import GoogleSheetsLogger
@@ -762,22 +732,15 @@ class ReservationFlow:
             if not calendar_success:
                 logging.warning(f"Failed to remove reservation {reservation_id} from Google Calendar")
             
-            # Clear cancel state
-            if user_id in self.user_states:
-                del self.user_states[user_id]
-            
             return f"""✅ 予約のキャンセルが完了しました！
 
 📋 キャンセル内容：
 • 予約ID：{reservation_id}
-• 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
-• サービス：{selected_reservation['service']}
-• 担当者：{selected_reservation['staff']}
 
 またのご利用をお待ちしております。"""
                 
         except Exception as e:
-            logging.error(f"Cancel selection failed: {e}")
+            logging.error(f"Reservation ID cancellation failed: {e}")
             return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
     def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
