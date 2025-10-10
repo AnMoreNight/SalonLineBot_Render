@@ -179,6 +179,16 @@ def handle_message(event: MessageEvent):
                 user_message=message_text,
                 bot_response=reply
             )
+            
+            # Clear user state after logging for completed reservations
+            if (reservation_flow and 
+                hasattr(reservation_flow, 'user_states') and 
+                user_id in reservation_flow.user_states and
+                reservation_flow.user_states[user_id].get('step') == 'confirmation' and
+                any(keyword in message_text for keyword in ['はい', '確定', 'お願い'])):
+                del reservation_flow.user_states[user_id]
+                logging.info(f"Cleared user state for {user_id} after reservation confirmation")
+                
         elif action_type == "faq":
             sheets_logger.log_faq_interaction(
                 user_id=user_id,

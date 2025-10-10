@@ -581,23 +581,11 @@ class ReservationFlow:
         if any(keyword in message for keyword in yes_keywords):
             # Complete the reservation
             reservation_data = self.user_states[user_id]["data"].copy()
-            try:
-                from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-                with ApiClient(self.line_configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            reply_token=user_id,
-                            messages=[TextMessage(text=reservation_data)]
-                        )
-                    )
-            except:
-                logging.error(f"Failed to log: {e}")
+            print("reservation_data", reservation_data)
+            
             # Generate reservation ID
             reservation_id = self.google_calendar.generate_reservation_id(reservation_data['date'])
             reservation_data['reservation_id'] = reservation_id
-            
-            del self.user_states[user_id]  # Clear user state
             
             # Get client display name
             client_name = self._get_line_display_name(user_id)
@@ -611,7 +599,8 @@ class ReservationFlow:
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
             
-            # Save reservation to Google Sheets
+            # Save reservation to Google Sheets Reservations sheet
+            sheets_success = False
             try:
                 from google_sheets_logger import GoogleSheetsLogger
                 sheets_logger = GoogleSheetsLogger()
@@ -631,11 +620,19 @@ class ReservationFlow:
                 }
                 
                 sheets_success = sheets_logger.save_reservation(sheet_reservation_data)
-                if not sheets_success:
-                    logging.warning(f"Failed to save reservation to Google Sheets for user {user_id}")
+                if sheets_success:
+                    logging.info(f"Successfully saved reservation {reservation_id} to Reservations sheet")
+                else:
+                    logging.error(f"Failed to save reservation {reservation_id} to Reservations sheet")
                     
             except Exception as e:
                 logging.error(f"Error saving reservation to Google Sheets: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Keep reservation data in user state for logging in index.py
+            # The user state will be cleared after logging in index.py
+            self.user_states[user_id]["data"] = reservation_data
            
             # Get time range for display
             time_display = reservation_data.get('start_time', reservation_data['time'])
@@ -915,3 +912,145 @@ class ReservationFlow:
         except Exception as e:
             logging.error(f"Modify request failed: {e}")
             return "申し訳ございません。変更の処理中にエラーが発生しました。少し時間を置いてお試しください。"
+
+
+def main():
+    """Interactive test function for reservation flow"""
+    print("=== Interactive Reservation Flow Tester ===")
+    print("Type your messages to test the reservation system interactively!")
+    print("Type 'quit' or 'exit' to stop testing.")
+    print("Type 'help' to see available commands.")
+    print("="*60)
+    
+    try:
+        # Initialize ReservationFlow
+        rf = ReservationFlow()
+        print("✅ ReservationFlow initialized successfully")
+        
+        # Test user ID
+        test_user_id = "interactive_test_user"
+        
+        print(f"\n🎯 Ready to test! User ID: {test_user_id}")
+        print("💡 Try starting with: 予約したい")
+        print("-" * 60)
+        
+        while True:
+            try:
+                # Get user input
+                user_input = input("\n👤 You: ").strip()
+                
+                # Handle special commands
+                if user_input.lower() in ['quit', 'exit', 'q']:
+                    print("👋 Goodbye! Thanks for testing!")
+                    break
+                elif user_input.lower() == 'help':
+                    print_help()
+                    continue
+                elif user_input.lower() == 'status':
+                    print_user_status(rf, test_user_id)
+                    continue
+                elif user_input.lower() == 'clear':
+                    clear_user_state(rf, test_user_id)
+                    continue
+                elif user_input.lower() == 'reset':
+                    test_user_id = f"interactive_test_user_{int(time.time())}"
+                    print(f"🔄 Reset with new user ID: {test_user_id}")
+                    continue
+                elif not user_input:
+                    print("⚠️ Please enter a message or command.")
+                    continue
+                
+                # Get response from reservation flow
+                response = rf.get_response(test_user_id, user_input)
+                
+                # Display response
+                print(f"\n🤖 Bot: {response}")
+                
+                # Show current user state
+                if test_user_id in rf.user_states:
+                    current_step = rf.user_states[test_user_id].get('step', 'unknown')
+                    print(f"📊 Current step: {current_step}")
+                else:
+                    print("📊 Current step: No active session")
+                
+            except KeyboardInterrupt:
+                print("\n\n👋 Goodbye! Thanks for testing!")
+                break
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+    except Exception as e:
+        print(f"❌ Error during initialization: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def print_help():
+    """Print help information for the interactive tester"""
+    print("\n" + "="*60)
+    print("📖 INTERACTIVE TESTER HELP")
+    print("="*60)
+    print("🎯 RESERVATION FLOW COMMANDS:")
+    print("  • 予約したい, 予約お願い, 予約できますか - Start reservation")
+    print("  • カット, カラー, パーマ, トリートメント - Select service")
+    print("  • 田中, 佐藤, 山田, 未指定 - Select staff")
+    print("  • 2025-01-15 (or any date) - Select date")
+    print("  • 10:00~11:00 (or any time range) - Select time")
+    print("  • はい, 確定, お願い - Confirm reservation")
+    print("  • いいえ, キャンセル, やめる - Cancel reservation")
+    print()
+    print("🔄 NAVIGATION COMMANDS:")
+    print("  • 日付変更, 日付を変更, 別の日 - Go back to date selection")
+    print("  • サービス変更, サービスを変更 - Go back to service selection")
+    print("  • キャンセル, 取り消し, やめる - Cancel current flow")
+    print()
+    print("📋 RESERVATION MANAGEMENT:")
+    print("  • 予約キャンセル, 予約取り消し - Cancel existing reservation")
+    print("  • 予約変更, 予約修正 - Modify existing reservation")
+    print()
+    print("🛠️ TESTER COMMANDS:")
+    print("  • help - Show this help message")
+    print("  • status - Show current user state")
+    print("  • clear - Clear current user state")
+    print("  • reset - Reset with new user ID")
+    print("  • quit, exit, q - Exit the tester")
+    print("="*60)
+
+
+def print_user_status(rf, user_id):
+    """Print current user state information"""
+    print(f"\n📊 USER STATUS: {user_id}")
+    print("-" * 40)
+    
+    if user_id in rf.user_states:
+        state = rf.user_states[user_id]
+        step = state.get('step', 'unknown')
+        data = state.get('data', {})
+        
+        print(f"Current Step: {step}")
+        print("Reservation Data:")
+        for key, value in data.items():
+            print(f"  • {key}: {value}")
+    else:
+        print("No active session")
+    
+    print("-" * 40)
+
+
+def clear_user_state(rf, user_id):
+    """Clear the current user state"""
+    if user_id in rf.user_states:
+        del rf.user_states[user_id]
+        print(f"✅ Cleared user state for {user_id}")
+    else:
+        print(f"ℹ️ No user state found for {user_id}")
+
+
+# Import time for reset functionality
+import time
+
+
+if __name__ == "__main__":
+    main()
