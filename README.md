@@ -39,8 +39,8 @@ A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retri
    - `LINE_CHANNEL_ACCESS_TOKEN`: Your LINE Bot Channel Access Token
    - `LINE_CHANNEL_SECRET`: Your LINE Bot Channel Secret
    - `OPENAI_API_KEY`: Your OpenAI API key
-   - `GOOGLE_CREDENTIALS`: Your Google Calendar API credentials (JSON format)
-   - `GOOGLE_SHEETS_CREDENTIALS`: Your Google Sheets API service account credentials (JSON format)
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Your Google Calendar API credentials (JSON format)
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Your Google Sheets API service account credentials (JSON format)
    - `GOOGLE_SHEET_ID`: Your Google Sheet ID for logging (from the sheet URL)
 
 4. **Deploy:**
@@ -82,8 +82,8 @@ The bot will automatically create headers and log:
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot Channel Access Token | Yes |
 | `LINE_CHANNEL_SECRET` | LINE Bot Channel Secret | Yes |
 | `OPENAI_API_KEY` | OpenAI API key for ChatGPT integration | Yes |
-| `GOOGLE_CREDENTIALS` | Google Calendar API credentials (JSON format) | Yes |
-| `GOOGLE_SHEETS_CREDENTIALS` | Google Sheets API service account credentials (JSON format) | Yes |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Calendar API credentials (JSON format) | Yes |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Sheets API service account credentials (JSON format) | Yes |
 | `GOOGLE_SHEET_ID` | Google Sheet ID for logging interactions | Yes |
 
 ### Local Development
