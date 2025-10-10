@@ -165,6 +165,16 @@ class ReservationFlow:
             # During other reservation steps, treat as reservation flow
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
+            
+            # If user is in cancel or modify flow and inputs reservation ID, continue the flow
+            if step in ["cancel_select_reservation", "modify_select_reservation"] and re.match(r"^RES-\d{8}-\d{4}$", message):
+                return step.split("_")[0]  # Return "cancel" or "modify"
+        
+        # Check if message is a reservation ID format
+        if re.match(r"^RES-\d{8}-\d{4}$", message):
+            # If it's a reservation ID but user is not in any flow, we need to determine intent
+            # For now, we'll return "general" and let the user specify their intent
+            return "general"
         
         # Get keywords from JSON data
         reservation_keywords = self.intent_keywords.get("reservation", [])
@@ -733,7 +743,6 @@ class ReservationFlow:
         
         try:
             # Check if message is a reservation ID
-            import re
             if re.match(r"^RES-\d{8}-\d{4}$", message):
                 reservation_id = message
                 # Find the reservation
@@ -989,9 +998,7 @@ class ReservationFlow:
         
         try:
             # Check if message is a reservation ID
-            import re
-            res_id_pattern = re.compile(r"^RES-\d{8}-\d{4}$")
-            if res_id_pattern.match(message):
+            if re.match(r"^RES-\d{8}-\d{4}$", message):
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
