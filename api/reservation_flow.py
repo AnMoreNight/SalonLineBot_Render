@@ -733,7 +733,8 @@ class ReservationFlow:
         
         try:
             # Check if message is a reservation ID
-            if message.startswith("RES-") and len(message) == 16:
+            import re
+            if re.match(r"^RES-\d{8}-\d{4}$", message):
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
@@ -988,7 +989,9 @@ class ReservationFlow:
         
         try:
             # Check if message is a reservation ID
-            if message.startswith("RES-") and len(message) == 16:
+            import re
+            res_id_pattern = re.compile(r"^RES-\d{8}-\d{4}$")
+            if res_id_pattern.match(message):
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
