@@ -328,41 +328,21 @@ class ReservationFlow:
             self.user_states[user_id]["step"] = "service_selection"
             return self._start_reservation(user_id)
         
-        # Parse date from calendar template response
+        # Parse date from user input - only accept YYYY-MM-DD format
         selected_date = None
         
-        # Try to parse YYYY-MM-DD format (from calendar template)
+        # Try to parse YYYY-MM-DD format
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', message)
         if date_match:
             selected_date = date_match.group(1)
-        else:
-            # Try to parse clickable date format [DD] from calendar
-            clickable_match = re.search(r'\[(\d{1,2})\]', message)
-            if clickable_match:
-                day = int(clickable_match.group(1))
-                current_date = datetime.now()
-                # Create the date for this month
-                try:
-                    selected_date = f"{current_date.year}-{current_date.month:02d}-{day:02d}"
-                    # Validate the date exists
-                    datetime.strptime(selected_date, "%Y-%m-%d")
-                except ValueError:
-                    selected_date = None
-            else:
-                # Fallback to old text-based parsing for backward compatibility
-                if "明日" in message:
-                    selected_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                elif "明後日" in message:
-                    selected_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
-                elif "土曜日" in message or "土曜" in message:
-                    # Find next Saturday
-                    days_ahead = 5 - datetime.now().weekday()  # Saturday is 5
-                    if days_ahead <= 0:
-                        days_ahead += 7
-                    selected_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+            # Validate the date format
+            try:
+                datetime.strptime(selected_date, "%Y-%m-%d")
+            except ValueError:
+                selected_date = None
         
         if not selected_date:
-            return "申し訳ございませんが、その日付は選択できません。上記の日付からお選びください。"
+            return "申し訳ございませんが、日付の形式が正しくありません。\n「YYYY-MM-DD」の形式で入力してください。\n例）2025-01-15"
         
         self.user_states[user_id]["data"]["date"] = selected_date
         self.user_states[user_id]["step"] = "time_selection"
@@ -659,11 +639,7 @@ class ReservationFlow:
         elif intent == "modify":
             return self._handle_modify_request(user_id, message)
         elif intent == "cancel":
-            # Check if user is providing a reservation ID (starts with "RES-")
-            if message.strip().startswith("RES-"):
-                return self._handle_reservation_id_cancellation(user_id, message.strip())
-            else:
-                return self._handle_cancel_request(user_id)
+            return self._handle_cancel_request(user_id, message)
         else:
             return None  # Let other systems handle this
 
@@ -686,39 +662,192 @@ class ReservationFlow:
             logging.error(f"Failed to get LINE display name: {e}")
             return "お客様"  # Fallback name
 
-    def _handle_cancel_request(self, user_id: str) -> str:
-        """Show user's reservations and handle cancellation by reservation ID."""
-        client_name = self._get_line_display_name(user_id)
+    def _handle_cancel_request(self, user_id: str, message: str = None) -> str:
+        """Handle reservation cancellation with reservation selection"""
+        state = self.user_states.get(user_id)
         
+        # Check for cancellation of the cancel flow
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message and message.lower() in flow_cancel_keywords:
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+            return "キャンセルをキャンセルいたします。またのご利用をお待ちしております。"
+        
+        # Step 1: Start cancellation flow - show user's reservations
+        if not state or state.get("step") not in ["cancel_select_reservation", "cancel_confirm"]:
+            self.user_states[user_id] = {"step": "cancel_select_reservation"}
+            return self._show_user_reservations_for_cancellation(user_id)
+        
+        # Step 2: Handle reservation selection
+        elif state.get("step") == "cancel_select_reservation":
+            return self._handle_cancel_reservation_selection(user_id, message)
+        
+        # Step 3: Handle confirmation
+        elif state.get("step") == "cancel_confirm":
+            return self._handle_cancel_confirmation(user_id, message)
+        
+        return "キャンセルフローに問題が発生しました。最初からやり直してください。"
+    
+    def _show_user_reservations_for_cancellation(self, user_id: str) -> str:
+        """Show user's reservations for cancellation selection"""
         try:
-            # Get user's reservations from Google Sheets
             from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
+            client_name = self._get_line_display_name(user_id)
+            
+            # Get user's reservations
             reservations = sheets_logger.get_user_reservations(client_name)
             
             if not reservations:
-                return "現在、登録されているご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
+                return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
             
-            # Format reservation list
+            # Store reservations for selection
+            self.user_states[user_id]["user_reservations"] = reservations
+            
+            # Create reservation list
             reservation_list = []
-            for i, res in enumerate(reservations, 1):
-                reservation_list.append(
-                    f"{i}. **{res['reservation_id']}**\n"
-                    f"   📅 {res['date']} {res['start_time']}~{res['end_time']}\n"
-                    f"   💇 {res['service']} - {res['staff']}"
-                )
+            for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
+                reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
             
-            return f"""ご予約一覧です：
+            return f"""ご予約のキャンセルですね。
+
+あなたの予約一覧：
 
 {chr(10).join(reservation_list)}
 
-キャンセルしたい予約の**予約ID**（例：{reservations[0]['reservation_id']}）を入力してください。
+キャンセルしたい予約の番号（1-{len(reservations[:5])}）を入力してください。
+
+または、予約IDを直接入力することもできます。
+例）RES-20250115-0001
 
 ❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
             
         except Exception as e:
-            logging.error(f"Cancel request failed: {e}")
-            return "申し訳ございません。キャンセルの処理中にエラーが発生しました。少し時間を置いてお試しください。"
+            logging.error(f"Failed to show user reservations for cancellation: {e}")
+            return "申し訳ございません。予約検索中にエラーが発生しました。スタッフまでお問い合わせください。"
+    
+    def _handle_cancel_reservation_selection(self, user_id: str, message: str) -> str:
+        """Handle reservation selection for cancellation"""
+        state = self.user_states[user_id]
+        reservations = state["user_reservations"]
+        
+        try:
+            # Check if message is a reservation ID
+            if message.startswith("RES-") and len(message) == 16:
+                reservation_id = message
+                # Find the reservation
+                selected_reservation = None
+                for res in reservations:
+                    if res["reservation_id"] == reservation_id:
+                        selected_reservation = res
+                        break
+                
+                if selected_reservation:
+                    # Store selected reservation and move to confirmation
+                    self.user_states[user_id]["selected_reservation"] = selected_reservation
+                    self.user_states[user_id]["step"] = "cancel_confirm"
+                    
+                    return f"""キャンセルする予約を確認してください：
+
+📋 予約内容：
+🆔 予約ID：{selected_reservation['reservation_id']}
+📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
+💇 サービス：{selected_reservation['service']}
+👨‍💼 担当者：{selected_reservation['staff']}
+
+この予約をキャンセルしますか？
+「はい」または「確定」とお送りください。
+
+❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+                else:
+                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
+            
+            # Check if message is a number (reservation selection)
+            elif message.isdigit():
+                reservation_index = int(message) - 1
+                if 0 <= reservation_index < len(reservations):
+                    selected_reservation = reservations[reservation_index]
+                    
+                    # Store selected reservation and move to confirmation
+                    self.user_states[user_id]["selected_reservation"] = selected_reservation
+                    self.user_states[user_id]["step"] = "cancel_confirm"
+                    
+                    return f"""キャンセルする予約を確認してください：
+
+📋 予約内容：
+🆔 予約ID：{selected_reservation['reservation_id']}
+📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
+💇 サービス：{selected_reservation['service']}
+👨‍💼 担当者：{selected_reservation['staff']}
+
+この予約をキャンセルしますか？
+「はい」または「確定」とお送りください。
+
+❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+                else:
+                    return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
+            else:
+                return f"申し訳ございませんが、正しい形式で入力してください。\n番号（1-{len(reservations)}）または予約ID（RES-YYYYMMDD-XXXX）を入力してください。"
+                
+        except Exception as e:
+            logging.error(f"Reservation selection for cancellation failed: {e}")
+            return "申し訳ございません。予約選択中にエラーが発生しました。スタッフまでお問い合わせください。"
+    
+    def _handle_cancel_confirmation(self, user_id: str, message: str) -> str:
+        """Handle cancellation confirmation"""
+        state = self.user_states[user_id]
+        reservation = state["selected_reservation"]
+        
+        # Check for confirmation keywords
+        yes_keywords = self.confirmation_keywords.get("yes", [])
+        no_keywords = self.confirmation_keywords.get("no", [])
+        
+        if any(keyword in message for keyword in yes_keywords):
+            # Execute cancellation
+            return self._execute_reservation_cancellation(user_id, reservation)
+        elif any(keyword in message for keyword in no_keywords):
+            # Cancel the cancellation
+            del self.user_states[user_id]
+            return "キャンセルをキャンセルいたします。予約はそのまま残ります。\nまたのご利用をお待ちしております。"
+        else:
+            return "「はい」または「確定」でキャンセルを確定するか、「キャンセル」で中止してください。"
+    
+    def _execute_reservation_cancellation(self, user_id: str, reservation: Dict) -> str:
+        """Execute the actual reservation cancellation"""
+        try:
+            from api.google_sheets_logger import GoogleSheetsLogger
+            sheets_logger = GoogleSheetsLogger()
+            
+            reservation_id = reservation["reservation_id"]
+            
+            # Update status in Google Sheets to "Cancelled"
+            sheets_success = sheets_logger.update_reservation_status(reservation_id, "Cancelled")
+            
+            if not sheets_success:
+                return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
+            
+            # Remove from Google Calendar
+            calendar_success = self.google_calendar.cancel_reservation_by_id(reservation_id)
+            
+            if not calendar_success:
+                logging.warning(f"Failed to remove reservation {reservation_id} from Google Calendar")
+            
+            # Clear user state
+            del self.user_states[user_id]
+            
+            return f"""✅ 予約のキャンセルが完了しました！
+
+📋 キャンセル内容：
+🆔 予約ID：{reservation_id}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']}
+
+またのご利用をお待ちしております。"""
+                
+        except Exception as e:
+            logging.error(f"Reservation cancellation execution failed: {e}")
+            return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
     def _handle_reservation_id_cancellation(self, user_id: str, reservation_id: str) -> str:
         """Handle direct reservation cancellation by ID"""
@@ -748,131 +877,39 @@ class ReservationFlow:
             logging.error(f"Reservation ID cancellation failed: {e}")
             return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
-    def _parse_datetime_from_text(self, text: str) -> Optional[Dict[str, str]]:
-        """Parse date and time from user text. Expected format: YYYY-MM-DD HH:MM.
-        Returns dict with keys 'date' and 'time' if both found, else None.
-        """
-        text = text.strip()
-        # Try pattern: 2025-10-07 14:30
-        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})", text)
-        if match:
-            date_part = match.group(1)
-            hour = int(match.group(2))
-            minute = int(match.group(3))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
-
-        # Try pattern: 2025-10-07 14:30:00 (with seconds) -> convert to HH:MM
-        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})", text)
-        if match:
-            date_part = match.group(1)
-            hour = int(match.group(2))
-            minute = int(match.group(3))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
-
-        # Try Japanese style like "10月7日 14時30分" → require conversion; keep simple for now
-        match2 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2})時(\d{1,2})?分?", text)
-        if match2:
-            y = int(match2.group(1))
-            m = int(match2.group(2))
-            d = int(match2.group(3))
-            hh = int(match2.group(4))
-            mm = int(match2.group(5) or 0)
-            if 1 <= m <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
-                return {"date": f"{y:04d}-{m:02d}-{d:02d}", "time": f"{hh:02d}:{mm:02d}"}
-
-        return None
 
     def _parse_time_range(self, text: str) -> tuple:
         """Parse start and end times from user input.
         Returns tuple of (start_time, end_time) in HH:MM format, or (None, None) if invalid.
+        Only supports standard HH:MM format.
         """
         text = text.strip()
         
-        # Helper function to normalize time to HH:MM format
-        def normalize_time(time_str):
-            time_str = time_str.strip()
-            
-            # Handle "10時" -> "10:00"
-            if re.match(r'^(\d{1,2})時$', time_str):
-                hour = int(re.match(r'^(\d{1,2})時$', time_str).group(1))
-                if 0 <= hour <= 23:
-                    return f"{hour:02d}:00"
-            
-            # Handle "10時30分" -> "10:30"
-            elif re.match(r'^(\d{1,2})時(\d{1,2})分?$', time_str):
-                match = re.match(r'^(\d{1,2})時(\d{1,2})分?$', time_str)
-                hour = int(match.group(1))
-                minute = int(match.group(2))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    return f"{hour:02d}:{minute:02d}"
-            
-            # Handle "10" -> "10:00"
-            elif re.match(r'^(\d{1,2})$', time_str):
-                hour = int(re.match(r'^(\d{1,2})$', time_str).group(1))
-                if 0 <= hour <= 23:
-                    return f"{hour:02d}:00"
-            
-            # Handle "10:30" or "10:30分" -> "10:30"
-            elif re.match(r'^(\d{1,2}):(\d{1,2})分?$', time_str):
-                match = re.match(r'^(\d{1,2}):(\d{1,2})分?$', time_str)
-                hour = int(match.group(1))
-                minute = int(match.group(2))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    return f"{hour:02d}:{minute:02d}"
-            
-            # Handle "10：30" (full-width colon) -> "10:30"
-            elif re.match(r'^(\d{1,2})：(\d{1,2})分?$', time_str):
-                match = re.match(r'^(\d{1,2})：(\d{1,2})分?$', time_str)
-                hour = int(match.group(1))
-                minute = int(match.group(2))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    return f"{hour:02d}:{minute:02d}"
-            
-            # Handle "10:30:00" format (with seconds) -> "10:30"
-            elif re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', time_str):
-                match = re.match(r'^(\d{1,2}):(\d{1,2}):(\d{1,2})$', time_str)
-                hour = int(match.group(1))
-                minute = int(match.group(2))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    return f"{hour:02d}:{minute:02d}"
-            
-            return None
-        
-        # Try different patterns for time range input
-        
         # Pattern 1: "10:00~11:00" or "10:00～11:00"
-        match = re.search(r'^(\d{1,2}[:：]\d{1,2}[分]?)[~～](\d{1,2}[:：]\d{1,2}[分]?)$', text)
+        match = re.search(r'^(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})$', text)
         if match:
-            start_time = normalize_time(match.group(1))
-            end_time = normalize_time(match.group(2))
-            if start_time and end_time:
+            start_time = match.group(1)
+            end_time = match.group(2)
+            # Validate time format
+            try:
+                datetime.strptime(start_time, "%H:%M")
+                datetime.strptime(end_time, "%H:%M")
                 return start_time, end_time
+            except ValueError:
+                pass
         
         # Pattern 2: "10:00 11:00" (space separated)
-        match = re.search(r'^(\d{1,2}[:：]\d{1,2}[分]?)\s+(\d{1,2}[:：]\d{1,2}[分]?)$', text)
+        match = re.search(r'^(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})$', text)
         if match:
-            start_time = normalize_time(match.group(1))
-            end_time = normalize_time(match.group(2))
-            if start_time and end_time:
+            start_time = match.group(1)
+            end_time = match.group(2)
+            # Validate time format
+            try:
+                datetime.strptime(start_time, "%H:%M")
+                datetime.strptime(end_time, "%H:%M")
                 return start_time, end_time
-        
-        # Pattern 3: "10時~11時" or "10時～11時"
-        match = re.search(r'^(\d{1,2}時\d{1,2}分?)[~～](\d{1,2}時\d{1,2}分?)$', text)
-        if match:
-            start_time = normalize_time(match.group(1))
-            end_time = normalize_time(match.group(2))
-            if start_time and end_time:
-                return start_time, end_time
-        
-        # Pattern 4: "10時 11時" (space separated)
-        match = re.search(r'^(\d{1,2}時\d{1,2}分?)\s+(\d{1,2}時\d{1,2}分?)$', text)
-        if match:
-            start_time = normalize_time(match.group(1))
-            end_time = normalize_time(match.group(2))
-            if start_time and end_time:
-                return start_time, end_time
+            except ValueError:
+                pass
         
         return None, None
 
@@ -887,21 +924,14 @@ class ReservationFlow:
                 del self.user_states[user_id]
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
         
-        # Step 1: Start modification flow - ask for reservation ID
+        # Step 1: Start modification flow - show user's reservations
         if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_confirm"]:
             self.user_states[user_id] = {"step": "modify_select_reservation"}
-            return """ご予約の変更ですね。
-
-まず、変更したい予約の予約IDを教えてください。
-予約IDは「RES-YYYYMMDD-XXXX」の形式です。
-
-例）RES-20250115-0001
-
-💡 予約IDが分からない場合は、お名前で検索することもできます。"""
+            return self._show_user_reservations_for_modification(user_id)
         
         # Step 2: Handle reservation selection
         if state.get("step") == "modify_select_reservation":
-            return self._handle_reservation_selection(user_id, message)
+            return self._handle_modify_reservation_selection(user_id, message)
         
         # Step 3: Handle field selection
         elif state.get("step") == "modify_select_field":
@@ -913,59 +943,110 @@ class ReservationFlow:
         
         return "予約変更フローに問題が発生しました。最初からやり直してください。"
     
-    def _handle_reservation_selection(self, user_id: str, message: str) -> str:
-        """Handle reservation selection for modification"""
+    def _show_user_reservations_for_modification(self, user_id: str) -> str:
+        """Show user's reservations for modification selection"""
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
             client_name = self._get_line_display_name(user_id)
             
+            # Get user's reservations
+            reservations = sheets_logger.get_user_reservations(client_name)
+            
+            if not reservations:
+                return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
+            
+            # Store reservations for selection
+            self.user_states[user_id]["user_reservations"] = reservations
+            
+            # Create reservation list
+            reservation_list = []
+            for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
+                reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
+            
+            return f"""ご予約の変更ですね。
+
+あなたの予約一覧：
+
+{chr(10).join(reservation_list)}
+
+変更したい予約の番号（1-{len(reservations[:5])}）を入力してください。
+
+または、予約IDを直接入力することもできます。
+例）RES-20250115-0001
+
+❌ 変更をやめる場合は「キャンセル」とお送りください。"""
+            
+        except Exception as e:
+            logging.error(f"Failed to show user reservations for modification: {e}")
+            return "申し訳ございません。予約検索中にエラーが発生しました。スタッフまでお問い合わせください。"
+    
+    def _handle_modify_reservation_selection(self, user_id: str, message: str) -> str:
+        """Handle reservation selection for modification"""
+        state = self.user_states[user_id]
+        reservations = state["user_reservations"]
+        
+        try:
             # Check if message is a reservation ID
             if message.startswith("RES-") and len(message) == 16:
                 reservation_id = message
-                reservation = sheets_logger.get_reservation_by_id(reservation_id)
+                # Find the reservation
+                selected_reservation = None
+                for res in reservations:
+                    if res["reservation_id"] == reservation_id:
+                        selected_reservation = res
+                        break
                 
-                if reservation and reservation["client_name"] == client_name:
-                    # Store reservation data and move to field selection
-                    self.user_states[user_id]["reservation_data"] = reservation
+                if selected_reservation:
+                    # Store selected reservation and move to field selection
+                    self.user_states[user_id]["reservation_data"] = selected_reservation
                     self.user_states[user_id]["step"] = "modify_select_field"
                     
                     return f"""予約が見つかりました！
 
 📋 現在の予約内容：
-🆔 予約ID：{reservation['reservation_id']}
-📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
-💇 サービス：{reservation['service']}
-👨‍💼 担当者：{reservation['staff']}
+🆔 予約ID：{selected_reservation['reservation_id']}
+📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
+💇 サービス：{selected_reservation['service']}
+👨‍💼 担当者：{selected_reservation['staff']}
 
 何を変更しますか？
 1️⃣ 日時変更したい
 2️⃣ サービス変更したい
 3️⃣ 担当者変更したい"""
                 else:
-                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDを入力してください。"
-            else:
-                # Search by client name
-                reservations = sheets_logger.get_user_reservations(client_name)
-                if reservations:
-                    reservation_list = []
-                    for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
-                        reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
+                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
+            
+            # Check if message is a number (reservation selection)
+            elif message.isdigit():
+                reservation_index = int(message) - 1
+                if 0 <= reservation_index < len(reservations):
+                    selected_reservation = reservations[reservation_index]
                     
-                    self.user_states[user_id]["user_reservations"] = reservations[:5]
-                    self.user_states[user_id]["step"] = "modify_select_reservation"
+                    # Store selected reservation and move to field selection
+                    self.user_states[user_id]["reservation_data"] = selected_reservation
+                    self.user_states[user_id]["step"] = "modify_select_field"
                     
-                    return f"""あなたの予約一覧：
+                    return f"""予約が見つかりました！
 
-{chr(10).join(reservation_list)}
+📋 現在の予約内容：
+🆔 予約ID：{selected_reservation['reservation_id']}
+📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
+💇 サービス：{selected_reservation['service']}
+👨‍💼 担当者：{selected_reservation['staff']}
 
-変更したい予約の番号（1-{len(reservations[:5])}）を入力してください。"""
+何を変更しますか？
+1️⃣ 日時変更したい
+2️⃣ サービス変更したい
+3️⃣ 担当者変更したい"""
                 else:
-                    return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
-                    
+                    return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
+            else:
+                return f"申し訳ございませんが、正しい形式で入力してください。\n番号（1-{len(reservations)}）または予約ID（RES-YYYYMMDD-XXXX）を入力してください。"
+                
         except Exception as e:
-            logging.error(f"Reservation selection failed: {e}")
-            return "申し訳ございません。予約検索中にエラーが発生しました。スタッフまでお問い合わせください。"
+            logging.error(f"Reservation selection for modification failed: {e}")
+            return "申し訳ございません。予約選択中にエラーが発生しました。スタッフまでお問い合わせください。"
     
     def _handle_field_selection(self, user_id: str, message: str) -> str:
         """Handle field selection for modification"""

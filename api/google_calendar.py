@@ -679,6 +679,29 @@ class GoogleCalendarHelper:
         except Exception as e:
             logging.error(f"Failed to get reservation by ID {reservation_id}: {e}")
             return None
+    
+    def cancel_reservation_by_id(self, reservation_id: str) -> bool:
+        """Cancel a reservation by reservation ID"""
+        try:
+            # Find the event with the reservation ID
+            event = self.get_reservation_by_id(reservation_id)
+            
+            if not event:
+                logging.warning(f"Reservation {reservation_id} not found in calendar")
+                return False
+            
+            # Delete the event
+            self.service.events().delete(
+                calendarId=self.calendar_id,
+                eventId=event['id']
+            ).execute()
+            
+            logging.info(f"Successfully cancelled reservation {reservation_id}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to cancel reservation {reservation_id}: {e}")
+            return False
 
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
