@@ -5,7 +5,7 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import pytz
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
@@ -564,6 +564,122 @@ class GoogleCalendarHelper:
         # Format: https://calendar.google.com/calendar/embed?src=CALENDAR_ID
         return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
     
+    def get_events_for_date(self, date_str: str) -> List[Dict]:
+        """Get all events for a specific date"""
+        if not self.service or not self.calendar_id:
+            return []
+        
+        try:
+            start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+            
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=start_date.isoformat() + 'Z',
+                timeMax=end_date.isoformat() + 'Z',
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            return events_result.get('items', [])
+        except Exception as e:
+            logging.error(f"Failed to get events for date {date_str}: {e}")
+            return []
+    
+    def get_available_slots_for_modification(self, date_str: str, exclude_reservation_id: str = None) -> List[Dict]:
+        """Get available slots including current reservation for modification"""
+        if not self.service or not self.calendar_id:
+            return self._generate_fallback_slots(
+                datetime.strptime(date_str, "%Y-%m-%d"),
+                datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
+            )
+        
+        try:
+            # Get all events for the date
+            events = self.get_events_for_date(date_str)
+            
+            # Filter out the reservation being modified (if any)
+            if exclude_reservation_id:
+                events = [e for e in events if exclude_reservation_id not in e.get('description', '')]
+            
+            # Generate available slots
+            start_date = datetime.strptime(date_str, "%Y-%m-%d")
+            end_date = start_date + timedelta(days=1)
+            
+            return self._generate_all_slots(start_date, end_date, events)
+            
+        except Exception as e:
+            logging.error(f"Failed to get available slots for modification: {e}")
+            return []
+    
+    def get_available_slots_for_service(self, date_str: str, service_name: str, exclude_reservation_id: str = None) -> List[Dict]:
+        """Get available slots considering service duration requirements"""
+        service_duration = self._get_service_duration_minutes(service_name)
+        
+        # Get all available periods
+        all_slots = self.get_available_slots_for_modification(date_str, exclude_reservation_id)
+        
+        # Filter slots that can accommodate the service duration
+        suitable_slots = []
+        for slot in all_slots:
+            slot_duration = self._calculate_slot_duration(slot)
+            if slot_duration >= service_duration:
+                suitable_slots.append(slot)
+        
+        return suitable_slots
+    
+    def _calculate_slot_duration(self, slot: Dict) -> int:
+        """Calculate duration of a time slot in minutes"""
+        try:
+            start_time = datetime.strptime(slot["time"], "%H:%M")
+            end_time = datetime.strptime(slot["end_time"], "%H:%M")
+            duration = (end_time - start_time).total_seconds() / 60
+            return int(duration)
+        except Exception:
+            return 0
+    
+    def validate_service_time_compatibility(self, date_str: str, time_slot: str, service_name: str) -> bool:
+        """Validate if a time slot can accommodate a service duration"""
+        service_duration = self._get_service_duration_minutes(service_name)
+        
+        # Parse time slot (assuming format like "10:00~11:00")
+        try:
+            if "~" in time_slot:
+                start_time, end_time = time_slot.split("~")
+                start_dt = datetime.strptime(start_time.strip(), "%H:%M")
+                end_dt = datetime.strptime(end_time.strip(), "%H:%M")
+                slot_duration = (end_dt - start_dt).total_seconds() / 60
+                return slot_duration >= service_duration
+        except Exception:
+            pass
+        
+        return False
+    
+    def get_reservation_by_id(self, reservation_id: str) -> Optional[Dict]:
+        """Get reservation details by reservation ID"""
+        try:
+            # Search for events with the reservation ID in the description
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=datetime.now().isoformat() + 'Z',
+                maxResults=100,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            events = events_result.get('items', [])
+            
+            for event in events:
+                description = event.get('description', '')
+                if reservation_id in description:
+                    return event
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Failed to get reservation by ID {reservation_id}: {e}")
+            return None
+
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
         """Get staff email from mapping"""
         staff_data = self.staff_data.get(staff_name, {})

@@ -389,3 +389,85 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Failed to update reservation status: {e}")
             return False
+    
+    def get_reservation_by_id(self, reservation_id: str) -> Optional[Dict[str, Any]]:
+        """Get reservation details by reservation ID"""
+        reservations_worksheet = self._get_reservations_worksheet()
+        if not reservations_worksheet:
+            return None
+        
+        try:
+            expected_headers = [
+                "Reservation ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
+            records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
+            for record in records:
+                if record.get("Reservation ID") == reservation_id:
+                    return {
+                        "reservation_id": record.get("Reservation ID"),
+                        "client_name": record.get("Client Name"),
+                        "date": record.get("Date"),
+                        "start_time": record.get("Start Time"),
+                        "end_time": record.get("End Time"),
+                        "service": record.get("Service"),
+                        "staff": record.get("Staff"),
+                        "duration": record.get("Duration (min)"),
+                        "price": record.get("Price"),
+                        "status": record.get("Status")
+                    }
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Failed to get reservation by ID: {e}")
+            return None
+    
+    def update_reservation_data(self, reservation_id: str, field_updates: Dict[str, Any]) -> bool:
+        """Update specific fields of a reservation"""
+        reservations_worksheet = self._get_reservations_worksheet()
+        if not reservations_worksheet:
+            return False
+        
+        try:
+            expected_headers = [
+                "Reservation ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
+            # Find the row with the reservation ID
+            records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
+            for i, record in enumerate(records, 2):  # Start from row 2 (skip header)
+                if record.get("Reservation ID") == reservation_id:
+                    # Update specific fields
+                    for field, value in field_updates.items():
+                        if field in expected_headers:
+                            column_index = expected_headers.index(field) + 1  # 1-based indexing
+                            reservations_worksheet.update_cell(i, column_index, value)
+                    
+                    logging.info(f"Updated reservation {reservation_id} with fields: {list(field_updates.keys())}")
+                    return True
+            
+            logging.warning(f"Reservation {reservation_id} not found for data update")
+            return False
+            
+        except Exception as e:
+            logging.error(f"Failed to update reservation data: {e}")
+            return False

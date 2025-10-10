@@ -7,10 +7,7 @@ import json
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
 import logging
-try:
-    from api.google_calendar import GoogleCalendarHelper
-except ImportError:
-    from google_calendar import GoogleCalendarHelper
+from api.google_calendar import GoogleCalendarHelper
 
 class ReservationFlow:
     def __init__(self):
@@ -598,7 +595,7 @@ class ReservationFlow:
             
             if not calendar_success:
                 logging.warning(f"Failed to create calendar event for user {user_id}")
-            
+           
             # Save reservation to Google Sheets Reservations sheet
             sheets_success = False
             try:
@@ -638,7 +635,7 @@ class ReservationFlow:
             time_display = reservation_data.get('start_time', reservation_data['time'])
             if 'end_time' in reservation_data:
                 time_display = f"{reservation_data['start_time']}~{reservation_data['end_time']}"
-            
+           
             return f"""✅ 予約が確定いたしました！
 
 🆔 予約ID：{reservation_id}
@@ -695,7 +692,7 @@ class ReservationFlow:
         
         try:
             # Get user's reservations from Google Sheets
-            from google_sheets_logger import GoogleSheetsLogger
+            from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
             reservations = sheets_logger.get_user_reservations(client_name)
             
@@ -727,7 +724,7 @@ class ReservationFlow:
         """Handle direct reservation cancellation by ID"""
         try:
             # Update status in Google Sheets to "Cancelled"
-            from google_sheets_logger import GoogleSheetsLogger
+            from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
             sheets_success = sheets_logger.update_reservation_status(reservation_id, "Cancelled")
             
@@ -764,7 +761,7 @@ class ReservationFlow:
             minute = int(match.group(3))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
-        
+
         # Try pattern: 2025-10-07 14:30:00 (with seconds) -> convert to HH:MM
         match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})", text)
         if match:
@@ -773,7 +770,7 @@ class ReservationFlow:
             minute = int(match.group(3))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 return {"date": date_part, "time": f"{hour:02d}:{minute:02d}"}
-        
+
         # Try Japanese style like "10月7日 14時30分" → require conversion; keep simple for now
         match2 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2})時(\d{1,2})?分?", text)
         if match2:
@@ -880,38 +877,358 @@ class ReservationFlow:
         return None, None
 
     def _handle_modify_request(self, user_id: str, message: str) -> str:
-        """Modify existing reservation time via Google Calendar.
-
-        Conversation flow:
-        - If we don't yet have new date/time, ask for it in the format "YYYY-MM-DD HH:MM".
-        - Once received, perform modification on the user's upcoming reservation.
-        """
+        """Handle comprehensive reservation modification with enhanced features"""
         state = self.user_states.get(user_id)
-        if not state or state.get("step") not in ["modify_waiting", "modify_provide_time"]:
-            # Start modify flow
-            self.user_states[user_id] = {"step": "modify_waiting"}
-            return "ご予約の変更ですね。\n新しい日時を \"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
-
-        # Try to parse date/time from message
-        parsed = self._parse_datetime_from_text(message)
-        if not parsed:
-            return "日時の形式が正しくありません。\n\"YYYY-MM-DD HH:MM\" の形式でお送りください。\n例）2025-10-07 14:30"
-
-        new_date = parsed["date"]
-        new_time = parsed["time"]
-        client_name = self._get_line_display_name(user_id)
-        try:
-            success = self.google_calendar.modify_reservation_time(client_name, new_date, new_time)
-            # Clear temporary modify state
-            if user_id in self.user_states and self.user_states[user_id].get("step","") in ["modify_waiting", "modify_provide_time"]:
+        
+        # Check for cancellation
+        flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        if message.lower() in flow_cancel_keywords:
+            if user_id in self.user_states:
                 del self.user_states[user_id]
-            if success:
-                return f"ご予約の日時を変更しました。\n📅 新しい日時：{new_date} {new_time}"
+            return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
+        
+        # Step 1: Start modification flow - ask for reservation ID
+        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_confirm"]:
+            self.user_states[user_id] = {"step": "modify_select_reservation"}
+            return """ご予約の変更ですね。
+
+まず、変更したい予約の予約IDを教えてください。
+予約IDは「RES-YYYYMMDD-XXXX」の形式です。
+
+例）RES-20250115-0001
+
+💡 予約IDが分からない場合は、お名前で検索することもできます。"""
+        
+        # Step 2: Handle reservation selection
+        if state.get("step") == "modify_select_reservation":
+            return self._handle_reservation_selection(user_id, message)
+        
+        # Step 3: Handle field selection
+        elif state.get("step") == "modify_select_field":
+            return self._handle_field_selection(user_id, message)
+        
+        # Step 4: Handle confirmation
+        elif state.get("step") == "modify_confirm":
+            return self._handle_modification_confirmation(user_id, message)
+        
+        return "予約変更フローに問題が発生しました。最初からやり直してください。"
+    
+    def _handle_reservation_selection(self, user_id: str, message: str) -> str:
+        """Handle reservation selection for modification"""
+        try:
+            from api.google_sheets_logger import GoogleSheetsLogger
+            sheets_logger = GoogleSheetsLogger()
+            client_name = self._get_line_display_name(user_id)
+            
+            # Check if message is a reservation ID
+            if message.startswith("RES-") and len(message) == 16:
+                reservation_id = message
+                reservation = sheets_logger.get_reservation_by_id(reservation_id)
+                
+                if reservation and reservation["client_name"] == client_name:
+                    # Store reservation data and move to field selection
+                    self.user_states[user_id]["reservation_data"] = reservation
+                    self.user_states[user_id]["step"] = "modify_select_field"
+                    
+                    return f"""予約が見つかりました！
+
+📋 現在の予約内容：
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']}
+
+何を変更しますか？
+1️⃣ 日時変更したい
+2️⃣ サービス変更したい
+3️⃣ 担当者変更したい"""
+                else:
+                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDを入力してください。"
             else:
-                return "現在、変更できるご予約が見つかりませんでした。\n別のお名前でご予約されている場合はスタッフまでお知らせください。"
+                # Search by client name
+                reservations = sheets_logger.get_user_reservations(client_name)
+                if reservations:
+                    reservation_list = []
+                    for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
+                        reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
+                    
+                    self.user_states[user_id]["user_reservations"] = reservations[:5]
+                    self.user_states[user_id]["step"] = "modify_select_reservation"
+                    
+                    return f"""あなたの予約一覧：
+
+{chr(10).join(reservation_list)}
+
+変更したい予約の番号（1-{len(reservations[:5])}）を入力してください。"""
+                else:
+                    return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
+                    
         except Exception as e:
-            logging.error(f"Modify request failed: {e}")
-            return "申し訳ございません。変更の処理中にエラーが発生しました。少し時間を置いてお試しください。"
+            logging.error(f"Reservation selection failed: {e}")
+            return "申し訳ございません。予約検索中にエラーが発生しました。スタッフまでお問い合わせください。"
+    
+    def _handle_field_selection(self, user_id: str, message: str) -> str:
+        """Handle field selection for modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Check for specific modification types
+        time_change_keywords = self.navigation_keywords.get("time_change", [])
+        service_change_keywords = self.navigation_keywords.get("service_change", [])
+        staff_change_keywords = self.navigation_keywords.get("staff_change", [])
+        
+        if any(keyword in message for keyword in time_change_keywords):
+            return self._handle_time_modification(user_id, message)
+        elif any(keyword in message for keyword in service_change_keywords):
+            return self._handle_service_modification(user_id, message)
+        elif any(keyword in message for keyword in staff_change_keywords):
+            return self._handle_staff_modification(user_id, message)
+        else:
+            return """何を変更しますか？以下のキーワードでお答えください：
+
+1️⃣ 時間変更したい
+2️⃣ サービス変更したい  
+3️⃣ 担当者変更したい
+
+または、番号（1-3）で選択してください。"""
+    
+    def _handle_time_modification(self, user_id: str, message: str) -> str:
+        """Handle time modification with current reservation inclusion"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Get available slots including current reservation
+        available_slots = self.google_calendar.get_available_slots_for_modification(
+            reservation["date"], 
+            reservation["reservation_id"]
+        )
+        
+        if not available_slots:
+            return f"申し訳ございませんが、{reservation['date']}は空いている時間がありません。\n別の日付での変更をご希望の場合は、スタッフまでお問い合わせください。"
+        
+        # Store modification type and show available times
+        self.user_states[user_id]["modification_type"] = "time"
+        self.user_states[user_id]["available_slots"] = available_slots
+        self.user_states[user_id]["step"] = "modify_confirm"
+        
+        # Create time options message
+        time_options = []
+        for slot in available_slots:
+            current_marker = " (現在の予約)" if slot["time"] == reservation["start_time"] else ""
+            time_options.append(f"✅ {slot['time']}~{slot['end_time']}{current_marker}")
+        
+        return f"""時間変更ですね！
+
+📅 {reservation['date']} の利用可能な時間：
+{chr(10).join(time_options)}
+
+新しい時間を「開始時間~終了時間」の形式で入力してください。
+例）13:00~14:00"""
+    
+    def _handle_service_modification(self, user_id: str, message: str) -> str:
+        """Handle service modification with duration validation"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Store modification type
+        self.user_states[user_id]["modification_type"] = "service"
+        self.user_states[user_id]["step"] = "modify_confirm"
+        
+        # Show available services
+        service_options = []
+        for service_name, service_info in self.services.items():
+            current_marker = " (現在のサービス)" if service_name == reservation["service"] else ""
+            service_options.append(f"✅ {service_name} ({service_info['duration']}分・{service_info['price']:,}円){current_marker}")
+        
+        return f"""サービス変更ですね！
+
+現在のサービス：{reservation['service']} ({reservation['duration']}分)
+
+利用可能なサービス：
+{chr(10).join(service_options)}
+
+新しいサービス名を入力してください。"""
+    
+    def _handle_staff_modification(self, user_id: str, message: str) -> str:
+        """Handle staff modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Store modification type
+        self.user_states[user_id]["modification_type"] = "staff"
+        self.user_states[user_id]["step"] = "modify_confirm"
+        
+        # Show available staff
+        staff_options = []
+        for staff_name, staff_info in self.staff_members.items():
+            current_marker = " (現在の担当者)" if staff_name == reservation["staff"] else ""
+            staff_options.append(f"✅ {staff_name} ({staff_info['specialty']}・{staff_info['experience']}){current_marker}")
+        
+        return f"""担当者変更ですね！
+
+現在の担当者：{reservation['staff']}
+
+利用可能な担当者：
+{chr(10).join(staff_options)}
+
+新しい担当者名を入力してください。"""
+    
+    def _handle_modification_confirmation(self, user_id: str, message: str) -> str:
+        """Handle modification confirmation and execution"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        modification_type = state["modification_type"]
+        
+        try:
+            from api.google_sheets_logger import GoogleSheetsLogger
+            sheets_logger = GoogleSheetsLogger()
+            
+            # Process the modification based on type
+            if modification_type == "time":
+                return self._process_time_modification(user_id, message, reservation, sheets_logger)
+            elif modification_type == "service":
+                return self._process_service_modification(user_id, message, reservation, sheets_logger)
+            elif modification_type == "staff":
+                return self._process_staff_modification(user_id, message, reservation, sheets_logger)
+            else:
+                return "申し訳ございません。変更処理中にエラーが発生しました。"
+                
+        except Exception as e:
+            logging.error(f"Modification confirmation failed: {e}")
+            return "申し訳ございません。変更処理中にエラーが発生しました。スタッフまでお問い合わせください。"
+    
+    def _process_time_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
+        """Process time modification"""
+        # Parse time range
+        start_time, end_time = self._parse_time_range(message)
+        
+        if not start_time or not end_time:
+            return "時間の形式が正しくありません。\n「開始時間~終了時間」の形式で入力してください。\n例）13:00~14:00"
+        
+        # Validate time slot is available
+        available_slots = self.user_states[user_id]["available_slots"]
+        time_slot_valid = any(
+            slot["time"] == start_time and slot["end_time"] == end_time 
+            for slot in available_slots
+        )
+        
+        if not time_slot_valid:
+            return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
+        
+        # Update Google Calendar
+        calendar_success = self.google_calendar.modify_reservation_time(
+            reservation["client_name"], 
+            reservation["date"], 
+            start_time
+        )
+        
+        if not calendar_success:
+            return "申し訳ございません。カレンダーの更新に失敗しました。スタッフまでお問い合わせください。"
+        
+        # Update Google Sheets
+        field_updates = {
+            "Start Time": start_time,
+            "End Time": end_time
+        }
+        sheets_success = sheets_logger.update_reservation_data(reservation["reservation_id"], field_updates)
+        
+        if not sheets_success:
+            logging.warning(f"Failed to update sheets for reservation {reservation['reservation_id']}")
+        
+        # Clear user state
+        del self.user_states[user_id]
+        
+        return f"""✅ 時間変更が完了しました！
+
+📋 変更内容：
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {start_time}~{end_time}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']}
+
+ご予約ありがとうございました！"""
+    
+    def _process_service_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
+        """Process service modification with duration validation"""
+        # Validate service
+        if message not in self.services:
+            return "申し訳ございませんが、そのサービスは提供しておりません。\n利用可能なサービスから選択してください。"
+        
+        new_service = message
+        new_service_info = self.services[new_service]
+        new_duration = new_service_info["duration"]
+        new_price = new_service_info["price"]
+        
+        # Check if current time slot can accommodate new service duration
+        current_duration = int(reservation["duration"])
+        if current_duration < new_duration:
+            return f"""申し訳ございませんが、現在の時間（{current_duration}分）では{new_service}（{new_duration}分）のサービスができません。
+
+時間も変更する場合は、まず「時間変更したい」を選択してください。"""
+        
+        # Update Google Calendar (recalculate end time)
+        calendar_success = self.google_calendar.modify_reservation_time(
+            reservation["client_name"], 
+            reservation["date"], 
+            reservation["start_time"]
+        )
+        
+        if not calendar_success:
+            return "申し訳ございません。カレンダーの更新に失敗しました。スタッフまでお問い合わせください。"
+        
+        # Update Google Sheets
+        field_updates = {
+            "Service": new_service,
+            "Duration (min)": new_duration,
+            "Price": new_price
+        }
+        sheets_success = sheets_logger.update_reservation_data(reservation["reservation_id"], field_updates)
+        
+        if not sheets_success:
+            logging.warning(f"Failed to update sheets for reservation {reservation['reservation_id']}")
+        
+        # Clear user state
+        del self.user_states[user_id]
+        
+        return f"""✅ サービス変更が完了しました！
+
+📋 変更内容：
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{new_service} ({new_duration}分・{new_price:,}円)
+👨‍💼 担当者：{reservation['staff']}
+
+ご予約ありがとうございました！"""
+    
+    def _process_staff_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
+        """Process staff modification"""
+        # Validate staff
+        if message not in self.staff_members:
+            return "申し訳ございませんが、その担当者は選択できません。\n利用可能な担当者から選択してください。"
+        
+        new_staff = message
+        
+        # Update Google Sheets
+        field_updates = {
+            "Staff": new_staff
+        }
+        sheets_success = sheets_logger.update_reservation_data(reservation["reservation_id"], field_updates)
+        
+        if not sheets_success:
+            return "申し訳ございません。担当者の更新に失敗しました。スタッフまでお問い合わせください。"
+        
+        # Clear user state
+        del self.user_states[user_id]
+        
+        return f"""✅ 担当者変更が完了しました！
+
+📋 変更内容：
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{new_staff}
+
+ご予約ありがとうございました！"""
 
 
 def main():
