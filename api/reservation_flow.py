@@ -581,7 +581,18 @@ class ReservationFlow:
         if any(keyword in message for keyword in yes_keywords):
             # Complete the reservation
             reservation_data = self.user_states[user_id]["data"].copy()
-            
+            try:
+                from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+                with ApiClient(self.line_configuration) as api_client:
+                    line_bot_api = MessagingApi(api_client)
+                    line_bot_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=user_id,
+                            messages=[TextMessage(text=reservation_data)]
+                        )
+                    )
+            except:
+                logging.error(f"Failed to log: {e}")
             # Generate reservation ID
             reservation_id = self.google_calendar.generate_reservation_id(reservation_data['date'])
             reservation_data['reservation_id'] = reservation_id
