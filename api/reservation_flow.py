@@ -602,7 +602,7 @@ class ReservationFlow:
             # Save reservation to Google Sheets Reservations sheet
             sheets_success = False
             try:
-                from google_sheets_logger import GoogleSheetsLogger
+                from api.google_sheets_logger import GoogleSheetsLogger
                 sheets_logger = GoogleSheetsLogger()
                 
                 # Prepare reservation data for Google Sheets
@@ -611,8 +611,8 @@ class ReservationFlow:
                     "reservation_id": reservation_id,
                     "client_name": client_name,
                     "date": reservation_data['date'],
-                    "start_time": reservation_data['start_time'],
-                    "end_time": reservation_data['end_time'],
+                    "start_time": reservation_data.get('start_time', reservation_data.get('time', '')),
+                    "end_time": reservation_data.get('end_time', ''),
                     "service": reservation_data['service'],
                     "staff": reservation_data['staff'],
                     "duration": service_info.get('duration', 60),

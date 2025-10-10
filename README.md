@@ -68,7 +68,7 @@ The bot automatically logs all interactions to Google Sheets for analytics and m
    - Share your Google Sheet with the service account email (found in the JSON file)
 
 3. **Configure Environment Variables:**
-   - `GOOGLE_SHEETS_CREDENTIALS`: Paste the entire JSON credentials file content
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Paste the entire JSON credentials file content
    - `GOOGLE_SHEET_ID`: The Sheet ID from step 1
 
 The bot will automatically create headers and log:
