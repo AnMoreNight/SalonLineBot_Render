@@ -166,8 +166,8 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
             
-            # If user is in cancel or modify flow and inputs reservation ID, continue the flow
-            if step in ["cancel_select_reservation", "modify_select_reservation"] and re.match(r"^RES-\d{8}-\d{4}$", message):
+            # If user is in cancel or modify flow, continue the flow regardless of message type
+            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_confirm"]:
                 return step.split("_")[0]  # Return "cancel" or "modify"
         
         # Check if message is a reservation ID format
@@ -707,6 +707,7 @@ class ReservationFlow:
             
             # Get user's reservations
             reservations = sheets_logger.get_user_reservations(client_name)
+            logging.info(f"Found {len(reservations) if reservations else 0} reservations for client: {client_name}")
             
             if not reservations:
                 return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
@@ -747,6 +748,8 @@ class ReservationFlow:
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
+                logging.info(f"Looking for reservation ID: {reservation_id}")
+                logging.info(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
                 for res in reservations:
                     if res["reservation_id"] == reservation_id:
                         selected_reservation = res
@@ -1002,6 +1005,8 @@ class ReservationFlow:
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
+                logging.info(f"Looking for reservation ID: {reservation_id}")
+                logging.info(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
                 for res in reservations:
                     if res["reservation_id"] == reservation_id:
                         selected_reservation = res
