@@ -168,7 +168,9 @@ class ReservationFlow:
             
             # If user is in cancel or modify flow, continue the flow regardless of message type
             if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_confirm"]:
-                return step.split("_")[0]  # Return "cancel" or "modify"
+                intent = step.split("_")[0]  # Return "cancel" or "modify"
+                logging.info(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
+                return intent
         
         # Check if message is a reservation ID format
         if re.match(r"^RES-\d{8}-\d{4}$", message):
@@ -760,6 +762,9 @@ class ReservationFlow:
                     self.user_states[user_id]["selected_reservation"] = selected_reservation
                     self.user_states[user_id]["step"] = "cancel_confirm"
                     
+                    # Get Google Calendar URL
+                    calendar_url = self.google_calendar.get_calendar_url()
+                    
                     return f"""キャンセルする予約を確認してください：
 
 📋 予約内容：
@@ -767,6 +772,9 @@ class ReservationFlow:
 📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
 💇 サービス：{selected_reservation['service']}
 👨‍💼 担当者：{selected_reservation['staff']}
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
 
 この予約をキャンセルしますか？
 「はい」または「確定」とお送りください。
@@ -785,6 +793,9 @@ class ReservationFlow:
                     self.user_states[user_id]["selected_reservation"] = selected_reservation
                     self.user_states[user_id]["step"] = "cancel_confirm"
                     
+                    # Get Google Calendar URL
+                    calendar_url = self.google_calendar.get_calendar_url()
+                    
                     return f"""キャンセルする予約を確認してください：
 
 📋 予約内容：
@@ -792,6 +803,9 @@ class ReservationFlow:
 📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
 💇 サービス：{selected_reservation['service']}
 👨‍💼 担当者：{selected_reservation['staff']}
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
 
 この予約をキャンセルしますか？
 「はい」または「確定」とお送りください。
@@ -948,6 +962,7 @@ class ReservationFlow:
         
         # Step 3: Handle field selection
         elif state.get("step") == "modify_select_field":
+            logging.info(f"Routing to field selection - User: {user_id}, Message: '{message}'")
             return self._handle_field_selection(user_id, message)
         
         # Step 4: Handle confirmation
@@ -1017,6 +1032,9 @@ class ReservationFlow:
                     self.user_states[user_id]["reservation_data"] = selected_reservation
                     self.user_states[user_id]["step"] = "modify_select_field"
                     
+                    # Get Google Calendar URL
+                    calendar_url = self.google_calendar.get_calendar_url()
+                    
                     return f"""予約が見つかりました！
 
 📋 現在の予約内容：
@@ -1024,6 +1042,9 @@ class ReservationFlow:
 📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
 💇 サービス：{selected_reservation['service']}
 👨‍💼 担当者：{selected_reservation['staff']}
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
 
 何を変更しますか？
 1️⃣ 日時変更したい
@@ -1042,6 +1063,9 @@ class ReservationFlow:
                     self.user_states[user_id]["reservation_data"] = selected_reservation
                     self.user_states[user_id]["step"] = "modify_select_field"
                     
+                    # Get Google Calendar URL
+                    calendar_url = self.google_calendar.get_calendar_url()
+                    
                     return f"""予約が見つかりました！
 
 📋 現在の予約内容：
@@ -1049,6 +1073,9 @@ class ReservationFlow:
 📅 日時：{selected_reservation['date']} {selected_reservation['start_time']}~{selected_reservation['end_time']}
 💇 サービス：{selected_reservation['service']}
 👨‍💼 担当者：{selected_reservation['staff']}
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
 
 何を変更しますか？
 1️⃣ 日時変更したい
@@ -1067,6 +1094,19 @@ class ReservationFlow:
         """Handle field selection for modification"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
+        
+        logging.info(f"Field selection - User: {user_id}, Message: '{message}', State: {state}")
+        
+        # Check for numeric selection first
+        if message.strip() == "1":
+            logging.info("Selected time modification (1)")
+            return self._handle_time_modification(user_id, message)
+        elif message.strip() == "2":
+            logging.info("Selected service modification (2)")
+            return self._handle_service_modification(user_id, message)
+        elif message.strip() == "3":
+            logging.info("Selected staff modification (3)")
+            return self._handle_staff_modification(user_id, message)
         
         # Check for specific modification types
         time_change_keywords = self.navigation_keywords.get("time_change", [])
