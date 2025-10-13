@@ -1256,15 +1256,31 @@ class ReservationFlow:
         if not start_time_available:
             return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
         
-        # Calculate the duration of the input time period
+        # Calculate the correct end time based on service duration
         try:
-            from datetime import datetime
-            start_dt = datetime.strptime(start_time, "%H:%M")
-            end_dt = datetime.strptime(end_time, "%H:%M")
-            duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+            from datetime import datetime, timedelta
             
-            if duration_minutes <= 0:
+            # Get service duration
+            service_name = reservation["service"]
+            service_duration = self.services.get(service_name, {}).get("duration", 60)
+            
+            # Calculate correct end time based on start time + service duration
+            start_dt = datetime.strptime(start_time, "%H:%M")
+            correct_end_dt = start_dt + timedelta(minutes=service_duration)
+            correct_end_time = correct_end_dt.strftime("%H:%M")
+            
+            # Validate user's input end time
+            user_end_dt = datetime.strptime(end_time, "%H:%M")
+            user_duration_minutes = int((user_end_dt - start_dt).total_seconds() / 60)
+            
+            if user_duration_minutes <= 0:
                 return "終了時間は開始時間より後である必要があります。\n例）13:00~14:00"
+            
+            # If user input duration is different from service duration, use the correct one
+            if user_duration_minutes != service_duration:
+                logging.info(f"User input duration ({user_duration_minutes}分) differs from service duration ({service_duration}分). Using service duration.")
+                end_time = correct_end_time
+            
         except Exception as e:
             logging.error(f"Error calculating duration: {e}")
             return "時間の形式が正しくありません。\n例）13:00~14:00"
