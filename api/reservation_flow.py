@@ -1241,35 +1241,33 @@ class ReservationFlow:
     
     def _process_time_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
         """Process time modification"""
-        # Parse time range
+        # Parse time range (ONLY accept time period format)
         start_time, end_time = self._parse_time_range(message)
         
-        # If full range not parsed, try to match just start time from available slots
         if not start_time or not end_time:
-            # Try to parse as single time (HH:MM)
-            match = re.search(r'^(\d{1,2}:\d{2})$', message.strip())
-            if match:
-                input_time = match.group(1)
-                # Find matching slot by start time
-                available_slots = self.user_states[user_id]["available_slots"]
-                for slot in available_slots:
-                    if slot["time"] == input_time:
-                        start_time = slot["time"]
-                        end_time = slot["end_time"]
-                        break
-            
-            if not start_time or not end_time:
-                return "時間の形式が正しくありません。\n「開始時間~終了時間」または「開始時間」の形式で入力してください。\n例）13:00~14:00 または 13:00"
+            return "時間の形式が正しくありません。\n「開始時間~終了時間」の形式で入力してください。\n例）13:00~14:00"
         
-        # Validate time slot is available
+        # Validate that the start time is in the available slots
         available_slots = self.user_states[user_id]["available_slots"]
-        time_slot_valid = any(
-            slot["time"] == start_time and slot["end_time"] == end_time 
-            for slot in available_slots
-        )
         
-        if not time_slot_valid:
+        # Check if the start time exists in available slots
+        start_time_available = any(slot["time"] == start_time for slot in available_slots)
+        
+        if not start_time_available:
             return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
+        
+        # Calculate the duration of the input time period
+        try:
+            from datetime import datetime
+            start_dt = datetime.strptime(start_time, "%H:%M")
+            end_dt = datetime.strptime(end_time, "%H:%M")
+            duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+            
+            if duration_minutes <= 0:
+                return "終了時間は開始時間より後である必要があります。\n例）13:00~14:00"
+        except Exception as e:
+            logging.error(f"Error calculating duration: {e}")
+            return "時間の形式が正しくありません。\n例）13:00~14:00"
         
         # Update Google Calendar
         calendar_success = self.google_calendar.modify_reservation_time(
@@ -1334,12 +1332,17 @@ class ReservationFlow:
         new_duration = new_service_info["duration"]
         new_price = new_service_info["price"]
         
-        # Check if current time slot can accommodate new service duration
-        current_duration = int(reservation["duration"])
-        if current_duration < new_duration:
-            return f"""申し訳ございませんが、現在の時間（{current_duration}分）では{new_service}（{new_duration}分）のサービスができません。
+        # Check if the new service can fit in any available slot on the date (ignoring current reservation)
+        available_slots = self.google_calendar.get_available_slots_for_service(
+            reservation["date"], 
+            new_service,
+            reservation["reservation_id"]
+        )
+        
+        if not available_slots:
+            return f"""申し訳ございませんが、{reservation['date']}には{new_service}（{new_duration}分）が可能な時間がありません。
 
-時間も変更する場合は、まず「時間変更したい」を選択してください。"""
+別の日付または別のサービスをご検討いただくか、スタッフまでお問い合わせください。"""
         
         # Update Google Calendar (recalculate end time)
         calendar_success = self.google_calendar.modify_reservation_time(
