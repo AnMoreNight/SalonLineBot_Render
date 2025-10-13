@@ -38,21 +38,7 @@ class ReservationFlow:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Failed to load services data: {e}")
-            # Return default data if file loading fails
-            return {
-                "services": {
-                    "カット": {"name": "カット", "duration": 60, "price": 3000, "description": "ヘアカットサービス"},
-                    "カラー": {"name": "カラー", "duration": 120, "price": 8000, "description": "ヘアカラーサービス"},
-                    "パーマ": {"name": "パーマ", "duration": 150, "price": 12000, "description": "パーマサービス"},
-                    "トリートメント": {"name": "トリートメント", "duration": 90, "price": 5000, "description": "ヘアトリートメントサービス"}
-                },
-                "staff": {
-                    "田中": {"name": "田中", "specialty": "カット・カラー", "experience": "5年", "email_env": "STAFF_TANAKA_EMAIL"},
-                    "佐藤": {"name": "佐藤", "specialty": "パーマ・トリートメント", "experience": "3年", "email_env": "STAFF_SATO_EMAIL"},
-                    "山田": {"name": "山田", "specialty": "カット・カラー・パーマ", "experience": "8年", "email_env": "STAFF_YAMADA_EMAIL"},
-                    "未指定": {"name": "未指定", "specialty": "全般", "experience": "担当者決定", "email_env": None}
-                }
-            }
+            raise RuntimeError(f"Cannot load services.json: {e}")
     
     def _load_keywords_data(self) -> Dict[str, Any]:
         """Load keywords data from JSON file"""
@@ -65,7 +51,8 @@ class ReservationFlow:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Failed to load keywords data: {e}")
-           
+            raise RuntimeError(f"Cannot load keywords.json: {e}")
+    
     def _calculate_time_duration_minutes(self, start_time: str, end_time: str) -> int:
         """Calculate duration in minutes between two time strings (HH:MM format)"""
         try:
@@ -133,7 +120,8 @@ class ReservationFlow:
     
     def detect_intent(self, message: str, user_id: str = None) -> str:
         """Detect user intent from message with context awareness"""
-        message_lower = message.lower()
+        # Normalize message: strip whitespace
+        message_normalized = message.strip()
         
         # Check if user is in reservation flow
         if user_id and user_id in self.user_states:
@@ -150,7 +138,7 @@ class ReservationFlow:
                 return intent
         
         # Check if message is a reservation ID format
-        if re.match(r"^RES-\d{8}-\d{4}$", message):
+        if re.match(r"^RES-\d{8}-\d{4}$", message_normalized):
             # If it's a reservation ID but user is not in any flow, we need to determine intent
             # For now, we'll return "general" and let the user specify their intent
             return "general"
@@ -161,13 +149,18 @@ class ReservationFlow:
         modify_keywords = self.intent_keywords.get("modify", [])
         
         # Priority order: reservation > service_selection > staff_selection > modify > cancel
-        if any(keyword in message_lower for keyword in reservation_keywords):
+        # Use 'in' operator for substring matching (works with Japanese)
+        if any(keyword in message_normalized for keyword in reservation_keywords):
+            logging.info(f"Detected 'reservation' intent for message: '{message_normalized}'")
             return "reservation"
-        elif any(keyword in message_lower for keyword in modify_keywords):
+        elif any(keyword in message_normalized for keyword in modify_keywords):
+            logging.info(f"Detected 'modify' intent for message: '{message_normalized}'")
             return "modify"
-        elif any(keyword in message_lower for keyword in cancel_keywords):
+        elif any(keyword in message_normalized for keyword in cancel_keywords):
+            logging.info(f"Detected 'cancel' intent for message: '{message_normalized}'")
             return "cancel"
         else:
+            logging.info(f"Detected 'general' intent for message: '{message_normalized}'")
             return "general"
     
     def handle_reservation_flow(self, user_id: str, message: str) -> str:
@@ -177,7 +170,8 @@ class ReservationFlow:
         
         # Check for flow cancellation at any step
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
@@ -225,14 +219,14 @@ class ReservationFlow:
         """Handle service selection"""
         # Check for flow cancellation first
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         selected_service = None
-        message_lower = message.lower()
         
-        # More flexible service matching
+        # More flexible service matching - normalize for both Japanese and English
         service_mapping = {
             "カット": "カット",
             "カラー": "カラー", 
@@ -245,7 +239,7 @@ class ReservationFlow:
         }
         
         for keyword, service_name in service_mapping.items():
-            if keyword in message_lower:
+            if keyword.lower() in message_normalized.lower():
                 selected_service = service_name
                 break
         
@@ -272,18 +266,19 @@ class ReservationFlow:
         """Handle staff selection"""
         # Check for flow cancellation first
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to service selection
         service_change_keywords = self.navigation_keywords.get("service_change", [])
-        if message.lower() in service_change_keywords:
+        if any(keyword in message_normalized for keyword in service_change_keywords):
             self.user_states[user_id]["step"] = "service_selection"
             return self._start_reservation(user_id)
         
         selected_staff = None
-        message_lower = message.lower()
+        message_lower = message.strip().lower()
         
         # Staff matching using JSON keywords
         for staff_name, keywords in self.staff_keywords.items():
@@ -307,13 +302,14 @@ class ReservationFlow:
         """Handle date selection from calendar template"""
         # Check for flow cancellation first
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to service selection
         service_change_keywords = self.navigation_keywords.get("service_change", [])
-        if message.lower() in service_change_keywords:
+        if any(keyword in message_normalized for keyword in service_change_keywords):
             self.user_states[user_id]["step"] = "service_selection"
             return self._start_reservation(user_id)
         
@@ -380,13 +376,14 @@ class ReservationFlow:
         """Handle time selection"""
         # Check for flow cancellation first
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             del self.user_states[user_id]
             return "予約をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Check for navigation to date selection
         date_change_keywords = self.navigation_keywords.get("date_change", [])
-        if message.lower() in date_change_keywords:
+        if any(keyword in message_normalized for keyword in date_change_keywords):
             self.user_states[user_id]["step"] = "date_selection"
             return self._create_calendar_template()
         
@@ -630,7 +627,7 @@ class ReservationFlow:
         elif intent == "cancel":
             return self._handle_cancel_request(user_id, message)
         else:
-            return None  # Let other systems handle this
+            return None 
 
     def set_line_configuration(self, configuration):
         """Set LINE configuration for getting display names"""
@@ -657,10 +654,12 @@ class ReservationFlow:
         
         # Check for cancellation of the cancel flow
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message and message.lower() in flow_cancel_keywords:
-            if user_id in self.user_states:
-                del self.user_states[user_id]
-            return "キャンセルをキャンセルいたします。またのご利用をお待ちしております。"
+        if message:
+            message_normalized = message.strip()
+            if any(keyword in message_normalized for keyword in flow_cancel_keywords):
+                if user_id in self.user_states:
+                    del self.user_states[user_id]
+                return "キャンセルをキャンセルいたします。またのご利用をお待ちしております。"
         
         # Step 1: Start cancellation flow - show user's reservations
         if not state or state.get("step") not in ["cancel_select_reservation", "cancel_confirm"]:
@@ -923,7 +922,8 @@ class ReservationFlow:
         
         # Check for cancellation
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
-        if message.lower() in flow_cancel_keywords:
+        message_normalized = message.strip()
+        if any(keyword in message_normalized for keyword in flow_cancel_keywords):
             if user_id in self.user_states:
                 del self.user_states[user_id]
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
