@@ -65,16 +65,19 @@ class ReservationFlow:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Failed to load keywords data: {e}")
-            # Return default data if file loading fails
+            # Return default keywords data if file loading fails
             return {
                 "intent_keywords": {
-                    "reservation": ["予約", "予約したい", "予約お願い", "予約できますか"],
-                    "modify": ["予約変更", "予約修正"],
-                    "cancel": ["キャンセル", "取り消し", "やめる", "中止"]
+                    "reservation": ["予約したい", "予約お願いします", "予約できますか"],
+                    "modify": ["予約変更したい", "予約を変更したい", "時間変更したい", "日時変更したい"],
+                    "cancel": ["予約キャンセルしたい", "予約をキャンセルしたい", "予約取り消ししたい"]
                 },
                 "navigation_keywords": {
-                    "date_change": ["日付変更", "日付を変更", "別の日", "他の日", "日付選択", "日付に戻る"],
-                    "service_change": ["サービス変更", "サービスを変更", "別のサービス", "他のサービス", "サービス選択", "サービスに戻る"]
+                    "date_change": ["日付変更したい", "日付を変更したい"],
+                    "service_change": ["サービス変更したい", "サービスを変更したい"],
+                    "time_change": ["時間変更したい", "時間を変更したい", "日時変更したい", "日時を変更したい"],
+                    "staff_change": ["担当者変更したい", "担当者を変更したい"],
+                    "flow_cancel": ["キャンセル", "取り消し", "やめる"]
                 },
                 "staff_keywords": {
                     "田中": ["田中"],
@@ -1339,15 +1342,6 @@ class ReservationFlow:
         if not start_time or not end_time:
             return "時間の形式が正しくありません。\n「開始時間~終了時間」の形式で入力してください。\n例）13:00~14:00"
         
-        # Validate that the start time is in the available slots
-        available_slots = self.user_states[user_id]["available_slots"]
-        
-        # Check if the start time exists in available slots
-        start_time_available = any(slot["time"] == start_time for slot in available_slots)
-        
-        if not start_time_available:
-            return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
-        
         # Get the selected date (might be different from original reservation date)
         selected_date = self.user_states[user_id].get("selected_date", reservation["date"])
         
@@ -1363,6 +1357,22 @@ class ReservationFlow:
             start_dt = datetime.strptime(start_time, "%H:%M")
             correct_end_dt = start_dt + timedelta(minutes=service_duration)
             correct_end_time = correct_end_dt.strftime("%H:%M")
+            
+            # Validate that the user's time period falls within an available slot
+            available_slots = self.user_states[user_id]["available_slots"]
+            time_is_available = False
+            
+            for slot in available_slots:
+                slot_start_dt = datetime.strptime(slot["time"], "%H:%M")
+                slot_end_dt = datetime.strptime(slot["end_time"], "%H:%M")
+                
+                # Check if user's reservation fits within this slot
+                if slot_start_dt <= start_dt and correct_end_dt <= slot_end_dt:
+                    time_is_available = True
+                    break
+            
+            if not time_is_available:
+                return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
             
             # Validate user's input end time
             user_end_dt = datetime.strptime(end_time, "%H:%M")
