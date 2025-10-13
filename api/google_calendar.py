@@ -604,7 +604,7 @@ class GoogleCalendarHelper:
             
             # Generate available slots
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
-            end_date = start_date + timedelta(days=1)
+            end_date = start_date
             
             return self._generate_all_slots(start_date, end_date, events)
             
@@ -618,6 +618,7 @@ class GoogleCalendarHelper:
         
         # Get all available periods
         all_slots = self.get_available_slots_for_modification(date_str, exclude_reservation_id)
+        
         
         # Filter slots that can accommodate the service duration
         suitable_slots = []

@@ -1238,8 +1238,22 @@ class ReservationFlow:
         # Parse time range
         start_time, end_time = self._parse_time_range(message)
         
+        # If full range not parsed, try to match just start time from available slots
         if not start_time or not end_time:
-            return "時間の形式が正しくありません。\n「開始時間~終了時間」の形式で入力してください。\n例）13:00~14:00"
+            # Try to parse as single time (HH:MM)
+            match = re.search(r'^(\d{1,2}:\d{2})$', message.strip())
+            if match:
+                input_time = match.group(1)
+                # Find matching slot by start time
+                available_slots = self.user_states[user_id]["available_slots"]
+                for slot in available_slots:
+                    if slot["time"] == input_time:
+                        start_time = slot["time"]
+                        end_time = slot["end_time"]
+                        break
+            
+            if not start_time or not end_time:
+                return "時間の形式が正しくありません。\n「開始時間~終了時間」または「開始時間」の形式で入力してください。\n例）13:00~14:00 または 13:00"
         
         # Validate time slot is available
         available_slots = self.user_states[user_id]["available_slots"]
