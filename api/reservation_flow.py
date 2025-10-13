@@ -65,32 +65,7 @@ class ReservationFlow:
                 return json.load(f)
         except Exception as e:
             logging.error(f"Failed to load keywords data: {e}")
-            # Return default keywords data if file loading fails
-            return {
-                "intent_keywords": {
-                    "reservation": ["予約したい", "予約お願いします", "予約できますか"],
-                    "modify": ["予約変更したい", "予約を変更したい", "時間変更したい", "日時変更したい"],
-                    "cancel": ["予約キャンセルしたい", "予約をキャンセルしたい", "予約取り消ししたい"]
-                },
-                "navigation_keywords": {
-                    "date_change": ["日付変更したい", "日付を変更したい"],
-                    "service_change": ["サービス変更したい", "サービスを変更したい"],
-                    "time_change": ["時間変更したい", "時間を変更したい", "日時変更したい", "日時を変更したい"],
-                    "staff_change": ["担当者変更したい", "担当者を変更したい"],
-                    "flow_cancel": ["キャンセル", "取り消し", "やめる"]
-                },
-                "staff_keywords": {
-                    "田中": ["田中"],
-                    "佐藤": ["佐藤"],
-                    "山田": ["山田"],
-                    "未指定": ["未指定", "担当者", "美容師"]
-                },
-                "confirmation_keywords": {
-                    "yes": ["はい", "確定", "お願い"],
-                    "no": ["いいえ", "キャンセル", "やめる"]
-                }
-            }
-    
+           
     def _calculate_time_duration_minutes(self, start_time: str, end_time: str) -> int:
         """Calculate duration in minutes between two time strings (HH:MM format)"""
         try:
