@@ -165,7 +165,6 @@ class ReservationFlow:
             # During other reservation steps, treat as reservation flow
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
-            
             # If user is in cancel or modify flow, continue the flow regardless of message type
             if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_confirm"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
@@ -1113,11 +1112,18 @@ class ReservationFlow:
         service_change_keywords = self.navigation_keywords.get("service_change", [])
         staff_change_keywords = self.navigation_keywords.get("staff_change", [])
         
-        if any(keyword in message for keyword in time_change_keywords):
+        # Normalize message for better matching
+        message_normalized = message.strip().lower()
+        
+        # Check keywords with case-insensitive matching
+        if any(keyword.lower() in message_normalized for keyword in time_change_keywords):
+            logging.info(f"Selected time modification via keyword: '{message}'")
             return self._handle_time_modification(user_id, message)
-        elif any(keyword in message for keyword in service_change_keywords):
+        elif any(keyword.lower() in message_normalized for keyword in service_change_keywords):
+            logging.info(f"Selected service modification via keyword: '{message}'")
             return self._handle_service_modification(user_id, message)
-        elif any(keyword in message for keyword in staff_change_keywords):
+        elif any(keyword.lower() in message_normalized for keyword in staff_change_keywords):
+            logging.info(f"Selected staff modification via keyword: '{message}'")
             return self._handle_staff_modification(user_id, message)
         else:
             return """何を変更しますか？以下のキーワードでお答えください：
@@ -1300,11 +1306,30 @@ class ReservationFlow:
     
     def _process_service_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
         """Process service modification with duration validation"""
-        # Validate service
-        if message not in self.services:
-            return "申し訳ございませんが、そのサービスは提供しておりません。\n利用可能なサービスから選択してください。"
+        # Normalize and validate service
+        message_normalized = message.strip()
+        new_service = None
         
-        new_service = message
+        # Try exact match first
+        if message_normalized in self.services:
+            new_service = message_normalized
+        else:
+            # Try case-insensitive match
+            for service_name in self.services.keys():
+                if service_name.lower() == message_normalized.lower():
+                    new_service = service_name
+                    break
+            
+            # Try partial match (if user types part of the service name)
+            if not new_service:
+                for service_name in self.services.keys():
+                    if message_normalized in service_name or service_name in message_normalized:
+                        new_service = service_name
+                        break
+        
+        if not new_service:
+            available_services = "、".join(self.services.keys())
+            return f"申し訳ございませんが、そのサービスは提供しておりません。\n\n利用可能なサービス：\n{available_services}\n\n上記から選択してください。"
         new_service_info = self.services[new_service]
         new_duration = new_service_info["duration"]
         new_price = new_service_info["price"]
@@ -1352,11 +1377,30 @@ class ReservationFlow:
     
     def _process_staff_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
         """Process staff modification"""
-        # Validate staff
-        if message not in self.staff_members:
-            return "申し訳ございませんが、その担当者は選択できません。\n利用可能な担当者から選択してください。"
+        # Normalize and validate staff
+        message_normalized = message.strip()
+        new_staff = None
         
-        new_staff = message
+        # Try exact match first
+        if message_normalized in self.staff_members:
+            new_staff = message_normalized
+        else:
+            # Try case-insensitive match
+            for staff_name in self.staff_members.keys():
+                if staff_name.lower() == message_normalized.lower():
+                    new_staff = staff_name
+                    break
+            
+            # Try partial match (if user types part of the staff name)
+            if not new_staff:
+                for staff_name in self.staff_members.keys():
+                    if message_normalized in staff_name or staff_name in message_normalized:
+                        new_staff = staff_name
+                        break
+        
+        if not new_staff:
+            available_staff = "、".join(self.staff_members.keys())
+            return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff}\n\n上記から選択してください。"
         
         # Update Google Sheets
         field_updates = {
