@@ -166,7 +166,7 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
             # If user is in cancel or modify flow, continue the flow regardless of message type
-            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_confirm"]:
+            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_confirm"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
                 logging.info(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
                 return intent
@@ -951,7 +951,7 @@ class ReservationFlow:
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Step 1: Start modification flow - show user's reservations
-        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_confirm"]:
+        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_confirm"]:
             self.user_states[user_id] = {"step": "modify_select_reservation"}
             return self._show_user_reservations_for_modification(user_id)
         
@@ -964,7 +964,15 @@ class ReservationFlow:
             logging.info(f"Routing to field selection - User: {user_id}, Message: '{message}'")
             return self._handle_field_selection(user_id, message)
         
-        # Step 4: Handle confirmation
+        # Step 4: Handle time modification date selection
+        elif state.get("step") == "modify_time_date_select":
+            return self._handle_time_date_selection(user_id, message)
+        
+        # Step 5: Handle time modification new date input
+        elif state.get("step") == "modify_time_input_date":
+            return self._handle_time_input_date(user_id, message)
+        
+        # Step 6: Handle confirmation
         elif state.get("step") == "modify_confirm":
             return self._handle_modification_confirmation(user_id, message)
         
@@ -1135,33 +1143,117 @@ class ReservationFlow:
 または、番号（1-3）で選択してください。"""
     
     def _handle_time_modification(self, user_id: str, message: str) -> str:
-        """Handle time modification with current reservation inclusion"""
+        """Handle time modification - ask if user wants to change date"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Get available slots including current reservation
+        # Store modification type and move to date selection
+        self.user_states[user_id]["modification_type"] = "time"
+        self.user_states[user_id]["step"] = "modify_time_date_select"
+        
+        # Get Google Calendar URL
+        calendar_url = self.google_calendar.get_calendar_url()
+        
+        return f"""時間変更ですね！
+
+📋 現在の予約：
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
+
+日付を変更しますか？
+
+1️⃣ 同じ日付で時間だけ変更
+2️⃣ 日付も変更したい
+
+番号を選択してください。"""
+    
+    def _handle_time_date_selection(self, user_id: str, message: str) -> str:
+        """Handle date selection for time modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Check user's choice
+        if message.strip() == "1":
+            # Same date, just change time
+            return self._show_available_times_for_date(user_id, reservation["date"])
+        elif message.strip() == "2":
+            # User wants to change date
+            self.user_states[user_id]["step"] = "modify_time_input_date"
+            
+            # Get Google Calendar URL
+            calendar_url = self.google_calendar.get_calendar_url()
+            
+            return f"""新しい日付を入力してください。
+
+🗓️ **Googleカレンダーで予約状況を確認：**
+🔗 {calendar_url}
+
+📅 日付の形式：YYYY-MM-DD
+例）2025-10-20
+
+※ 土曜日と日曜日は定休日です。"""
+        else:
+            return """番号を選択してください：
+
+1️⃣ 同じ日付で時間だけ変更
+2️⃣ 日付も変更したい"""
+    
+    def _handle_time_input_date(self, user_id: str, message: str) -> str:
+        """Handle new date input for time modification"""
+        # Parse and validate date
+        import re
+        from datetime import datetime
+        
+        date_match = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', message.strip())
+        if not date_match:
+            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20"
+        
+        try:
+            new_date = message.strip()
+            date_obj = datetime.strptime(new_date, "%Y-%m-%d")
+            
+            # Check if it's not Sunday (weekday 6)
+            if date_obj.weekday() == 6:
+                return "申し訳ございませんが、日曜日は定休日です。\n別の日付を選択してください。"
+            
+            # Check if date is in the future
+            if date_obj.date() < datetime.now().date():
+                return "過去の日付は選択できません。\n本日以降の日付を入力してください。"
+            
+            # Date is valid, show available times
+            return self._show_available_times_for_date(user_id, new_date)
+            
+        except ValueError:
+            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20"
+    
+    def _show_available_times_for_date(self, user_id: str, date: str) -> str:
+        """Show available times for a specific date"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Get available slots for the date (excluding current reservation)
         available_slots = self.google_calendar.get_available_slots_for_modification(
-            reservation["date"], 
+            date, 
             reservation["reservation_id"]
         )
         
         if not available_slots:
-            return f"申し訳ございませんが、{reservation['date']}は空いている時間がありません。\n別の日付での変更をご希望の場合は、スタッフまでお問い合わせください。"
+            return f"申し訳ございませんが、{date}は空いている時間がありません。\n別の日付を選択してください。"
         
-        # Store modification type and show available times
-        self.user_states[user_id]["modification_type"] = "time"
+        # Store the selected date and available slots
+        self.user_states[user_id]["selected_date"] = date
         self.user_states[user_id]["available_slots"] = available_slots
         self.user_states[user_id]["step"] = "modify_confirm"
         
         # Create time options message
         time_options = []
         for slot in available_slots:
-            current_marker = " (現在の予約)" if slot["time"] == reservation["start_time"] else ""
+            current_marker = " (現在の予約)" if (slot["time"] == reservation["start_time"] and date == reservation["date"]) else ""
             time_options.append(f"✅ {slot['time']}~{slot['end_time']}{current_marker}")
         
-        return f"""時間変更ですね！
-
-📅 {reservation['date']} の利用可能な時間：
+        return f"""📅 {date} の利用可能な時間：
 {chr(10).join(time_options)}
 
 新しい時間を「開始時間~終了時間」の形式で入力してください。
@@ -1256,6 +1348,9 @@ class ReservationFlow:
         if not start_time_available:
             return "申し訳ございませんが、その時間は利用できません。\n利用可能な時間から選択してください。"
         
+        # Get the selected date (might be different from original reservation date)
+        selected_date = self.user_states[user_id].get("selected_date", reservation["date"])
+        
         # Calculate the correct end time based on service duration
         try:
             from datetime import datetime, timedelta
@@ -1285,21 +1380,26 @@ class ReservationFlow:
             logging.error(f"Error calculating duration: {e}")
             return "時間の形式が正しくありません。\n例）13:00~14:00"
         
-        # Update Google Calendar
+        # Update Google Calendar with the selected date
         calendar_success = self.google_calendar.modify_reservation_time(
             reservation["client_name"], 
-            reservation["date"], 
+            selected_date,  # Use selected date instead of original date
             start_time
         )
         
         if not calendar_success:
             return "申し訳ございません。カレンダーの更新に失敗しました。スタッフまでお問い合わせください。"
         
-        # Update Google Sheets
+        # Update Google Sheets (include date if changed)
         field_updates = {
             "Start Time": start_time,
             "End Time": end_time
         }
+        
+        # If date was changed, update it too
+        if selected_date != reservation["date"]:
+            field_updates["Date"] = selected_date
+        
         sheets_success = sheets_logger.update_reservation_data(reservation["reservation_id"], field_updates)
         
         if not sheets_success:
@@ -1312,7 +1412,7 @@ class ReservationFlow:
 
 📋 変更内容：
 🆔 予約ID：{reservation['reservation_id']}
-📅 日時：{reservation['date']} {start_time}~{end_time}
+📅 日時：{selected_date} {start_time}~{end_time}
 💇 サービス：{reservation['service']}
 👨‍💼 担当者：{reservation['staff']}
 
