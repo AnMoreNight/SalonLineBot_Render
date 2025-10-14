@@ -641,7 +641,7 @@ class GoogleCalendarHelper:
             # Generate available slots based ONLY on other reservations
             # This means the current reservation's time will be shown as available
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
-            end_date = start_date
+            end_date = start_date + timedelta(days=1)
             
             available_slots = self._generate_all_slots(start_date, end_date, other_events)
             logging.info(f"[Modification] Generated {len(available_slots)} available slot(s)")
