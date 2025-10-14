@@ -29,7 +29,7 @@ class GoogleCalendarHelper:
         try:
             self._authenticate()
         except Exception as e:
-            logging.error(f"Failed to initialize Google Calendar: {e}")
+            print(f"Failed to initialize Google Calendar: {e}")
             self.service = None
     
     def _load_services_data(self) -> Dict[str, Any]:
@@ -42,7 +42,7 @@ class GoogleCalendarHelper:
             with open(services_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            logging.error(f"Failed to load services data: {e}")
+            print(f"Failed to load services data: {e}")
             # Return default data if file loading fails
             return {
                 "services": {
@@ -63,14 +63,14 @@ class GoogleCalendarHelper:
         """Authenticate with Google Calendar API using service account"""
         try:
             if not self.service_account_json:
-                logging.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set, calendar integration disabled")
+                print("GOOGLE_SERVICE_ACCOUNT_JSON not set, calendar integration disabled")
                 return
             
             # Parse service account JSON from environment variable
             try:
                 service_account_info = json.loads(self.service_account_json)
             except json.JSONDecodeError as e:
-                logging.error(f"Invalid JSON in GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+                print(f"Invalid JSON in GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
                 return
             
             # Load service account credentials from JSON
@@ -81,10 +81,10 @@ class GoogleCalendarHelper:
             
             # Build the service
             self.service = build('calendar', 'v3', credentials=credentials)
-            logging.info("Google Calendar API authenticated successfully")
+            print("Google Calendar API authenticated successfully")
             
         except Exception as e:
-            logging.error(f"Failed to authenticate with Google Calendar: {e}")
+            print(f"Failed to authenticate with Google Calendar: {e}")
             self.service = None
     
     def generate_reservation_id(self, date_str: str) -> str:
@@ -111,7 +111,7 @@ class GoogleCalendarHelper:
             bool: True if successful, False otherwise
         """
         if not self.service or not self.calendar_id:
-            logging.warning("Google Calendar not configured, skipping event creation")
+            print("Google Calendar not configured, skipping event creation")
             return False
         
         try:
@@ -186,14 +186,14 @@ class GoogleCalendarHelper:
                 body=event
             ).execute()
             
-            logging.info(f"Calendar event created: {created_event.get('htmlLink')}")
+            print(f"Calendar event created: {created_event.get('htmlLink')}")
             return True
             
         except HttpError as e:
-            logging.error(f"Google Calendar API error: {e}")
+            print(f"Google Calendar API error: {e}")
             return False
         except Exception as e:
-            logging.error(f"Failed to create calendar event: {e}")
+            print(f"Failed to create calendar event: {e}")
             return False
 
     def _get_service_duration_minutes(self, service_name: str) -> int:
@@ -207,7 +207,7 @@ class GoogleCalendarHelper:
         Tries to match by summary or description containing the client name.
         """
         if not self.service or not self.calendar_id:
-            logging.warning("Google Calendar not configured, cannot search events")
+            print("Google Calendar not configured, cannot search events")
             return None
 
         try:
@@ -230,7 +230,7 @@ class GoogleCalendarHelper:
 
             return None
         except Exception as e:
-            logging.error(f"Failed to search events: {e}")
+            print(f"Failed to search events: {e}")
             return None
 
     def cancel_reservation(self, client_name: str) -> bool:
@@ -243,10 +243,10 @@ class GoogleCalendarHelper:
                 calendarId=self.calendar_id,
                 eventId=event['id']
             ).execute()
-            logging.info(f"Cancelled reservation for {client_name}")
+            print(f"Cancelled reservation for {client_name}")
             return True
         except Exception as e:
-            logging.error(f"Failed to cancel reservation: {e}")
+            print(f"Failed to cancel reservation: {e}")
             return False
 
     def cancel_reservation_by_id(self, reservation_id: str) -> bool:
@@ -271,14 +271,14 @@ class GoogleCalendarHelper:
                         calendarId=self.calendar_id,
                         eventId=event['id']
                     ).execute()
-                    logging.info(f"Cancelled reservation {reservation_id} from Google Calendar")
+                    print(f"Cancelled reservation {reservation_id} from Google Calendar")
                     return True
             
-            logging.warning(f"Reservation {reservation_id} not found in Google Calendar")
+            print(f"Reservation {reservation_id} not found in Google Calendar")
             return False
             
         except Exception as e:
-            logging.error(f"Failed to cancel reservation by ID {reservation_id}: {e}")
+            print(f"Failed to cancel reservation by ID {reservation_id}: {e}")
             return False
 
     def modify_reservation_time(self, client_name: str, new_date: str, new_time: str) -> bool:
@@ -324,10 +324,10 @@ class GoogleCalendarHelper:
                 body=event
             ).execute()
 
-            logging.info(f"Modified reservation time for {client_name}: {updated.get('htmlLink')}")
+            print(f"Modified reservation time for {client_name}: {updated.get('htmlLink')}")
             return True
         except Exception as e:
-            logging.error(f"Failed to modify reservation time: {e}")
+            print(f"Failed to modify reservation time: {e}")
             return False
         
         try:
@@ -413,14 +413,14 @@ class GoogleCalendarHelper:
                 body=event
             ).execute()
             
-            logging.info(f"Calendar event created: {created_event.get('htmlLink')}")
+            print(f"Calendar event created: {created_event.get('htmlLink')}")
             return True
             
         except HttpError as e:
-            logging.error(f"Google Calendar API error: {e}")
+            print(f"Google Calendar API error: {e}")
             return False
         except Exception as e:
-            logging.error(f"Failed to create calendar event: {e}")
+            print(f"Failed to create calendar event: {e}")
             return False
     
     # def _get_location_from_kb(self) -> str:
@@ -435,7 +435,7 @@ class GoogleCalendarHelper:
             
     #         return ""
     #     except Exception as e:
-    #         logging.warning(f"Could not load location from KB: {e}")
+    #         print(f"Could not load location from KB: {e}")
     #         return ""
     
     def get_available_slots(self, start_date: datetime, end_date: datetime) -> list:
@@ -450,7 +450,7 @@ class GoogleCalendarHelper:
             list: List of available time slots
         """
         if not self.service or not self.calendar_id:
-            logging.warning("Google Calendar not configured, using fallback slots")
+            print("Google Calendar not configured, using fallback slots")
             return self._generate_fallback_slots(start_date, end_date)
         
         try:
@@ -471,7 +471,7 @@ class GoogleCalendarHelper:
             return available_slots
             
         except Exception as e:
-            logging.error(f"Failed to get available slots from Google Calendar: {e}")
+            print(f"Failed to get available slots from Google Calendar: {e}")
             return self._generate_fallback_slots(start_date, end_date)
     
     def _generate_all_slots(self, start_date: datetime, end_date: datetime, events: list = None) -> list:
@@ -487,6 +487,7 @@ class GoogleCalendarHelper:
         ]
         
         while current_date <= end_date_only:
+            print(f"[Generate All Slots] Current date: {current_date}")
             # Skip Sundays (weekday 6)
             if current_date.weekday() != 6:
                 # Get events for this specific date
@@ -502,6 +503,7 @@ class GoogleCalendarHelper:
                 
                 # Find available periods for each business period
                 for business_period in business_periods:
+                    print("calling _find_available_periods")
                     available_periods = self._find_available_periods(
                         current_date, business_period, date_events
                     )
@@ -527,7 +529,7 @@ class GoogleCalendarHelper:
         business_start = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
         business_end = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["end"])))
         
-        logging.info(f"[Find Periods] Business: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}, Events: {len(events)}")
+        print(f"[Find Periods] Business: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}, Events: {len(events)}")
         
         # Convert events to datetime ranges and merge overlapping ones
         available_periods = []
@@ -535,35 +537,35 @@ class GoogleCalendarHelper:
             event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
             event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
             
-            logging.info(f"[Find Periods] Processing event: {event_start.strftime('%H:%M')} ~ {event_end.strftime('%H:%M')}")
-            logging.info(f"  Current business_start: {business_start.strftime('%H:%M')}")
+            print(f"[Find Periods] Processing event: {event_start.strftime('%H:%M')} ~ {event_end.strftime('%H:%M')}")
+            print(f"  Current business_start: {business_start.strftime('%H:%M')}")
             
             if event_start <= business_end and event_end >= business_start:
-                logging.info(f"  Event overlaps with business hours")
+                print(f"  Event overlaps with business hours")
                 if event_start > business_start:
-                    logging.info(f"  Gap found: {business_start.strftime('%H:%M')} ~ {event_start.strftime('%H:%M')}")
+                    print(f"  Gap found: {business_start.strftime('%H:%M')} ~ {event_start.strftime('%H:%M')}")
                     available_periods.append({
                         'start': business_start.strftime("%H:%M"),
                         'end': event_start.strftime("%H:%M")
                     })
                     business_start = event_end
-                    logging.info(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
+                    print(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
                 elif event_start == business_start:
-                    logging.info(f"  Event starts at business_start, moving to: {event_end.strftime('%H:%M')}")
+                    print(f"  Event starts at business_start, moving to: {event_end.strftime('%H:%M')}")
                     business_start = event_end
-                    logging.info(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
+                    print(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
             else:
-                logging.info(f"  Event outside business hours, skipping")
+                print(f"  Event outside business hours, skipping")
 
-        logging.info(f"[Find Periods] After all events, business_start: {business_start.strftime('%H:%M')}, business_end: {business_end.strftime('%H:%M')}")
+        print(f"[Find Periods] After all events, business_start: {business_start.strftime('%H:%M')}, business_end: {business_end.strftime('%H:%M')}")
         if business_start < business_end:
-            logging.info(f"[Find Periods] Final gap: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}")
+            print(f"[Find Periods] Final gap: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}")
             available_periods.append({
                 'start': business_start.strftime("%H:%M"),
                 'end': business_end.strftime("%H:%M")
             })
         
-        logging.info(f"[Find Periods] Total available periods: {len(available_periods)}")
+        print(f"[Find Periods] Total available periods: {len(available_periods)}")
         return available_periods
     
     def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
@@ -587,9 +589,9 @@ class GoogleCalendarHelper:
         try:
             # Get start of day (00:00:00) and end of day (23:59:59)
             start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date  # Next day at 00:00:00
+            end_date = start_date + timedelta(days=1)   # Next day at 00:00:00
             
-            logging.info(f"[Get Events] Fetching events from {start_date.isoformat()} to {end_date.isoformat()}")
+            print(f"[Get Events] Fetching events from {start_date.isoformat()} to {end_date.isoformat()}")
             
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
@@ -600,11 +602,11 @@ class GoogleCalendarHelper:
             ).execute()
             
             events = events_result.get('items', [])
-            logging.info(f"[Get Events] Found {len(events)} event(s) for {date_str}")
+            print(f"[Get Events] Found {len(events)} event(s) for {date_str}")
             
             return events
         except Exception as e:
-            logging.error(f"Failed to get events for date {date_str}: {e}")
+            print(f"Failed to get events for date {date_str}: {e}")
             return []
     
     def get_available_slots_for_modification(self, date_str: str, exclude_reservation_id: str = None) -> List[Dict]:
@@ -621,7 +623,7 @@ class GoogleCalendarHelper:
         try:
             # Get all events for the date
             all_events = self.get_events_for_date(date_str)
-            logging.info(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}")
+            print(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}")
             
             current_reservation = None
             other_events = []
@@ -640,44 +642,44 @@ class GoogleCalendarHelper:
                     # Check if this is the reservation being modified
                     if f"予約ID: {exclude_reservation_id}" in description:
                         current_reservation = e
-                        logging.info(f"  📌 Current reservation (INCLUDE in slots): {e.get('summary', 'N/A')}")
-                        logging.info(f"     Time: {event_start} ~ {event_end}")
-                        logging.info(f"     ID: {event_res_id}")
+                        print(f"  📌 Current reservation (INCLUDE in slots): {e.get('summary', 'N/A')}")
+                        print(f"     Time: {event_start} ~ {event_end}")
+                        print(f"     ID: {event_res_id}")
                     else:
                         other_events.append(e)
-                        logging.info(f"  🚫 Other reservation (BLOCK slots): {e.get('summary', 'N/A')}")
-                        logging.info(f"     Time: {event_start} ~ {event_end}")
-                        logging.info(f"     ID: {event_res_id}")
+                        print(f"  🚫 Other reservation (BLOCK slots): {e.get('summary', 'N/A')}")
+                        print(f"     Time: {event_start} ~ {event_end}")
+                        print(f"     ID: {event_res_id}")
             else:
                 other_events = all_events
             
-            logging.info(f"[Modification] Using {len(other_events)} other events for blocking")
+            print(f"[Modification] Using {len(other_events)} other events for blocking")
             
             # Log the blocking events details
             for e in other_events:
                 start_time = e.get('start', {}).get('dateTime', 'N/A')
                 end_time = e.get('end', {}).get('dateTime', 'N/A')
-                logging.info(f"  🚫 Blocking: {start_time} ~ {end_time}")
+                print(f"  🚫 Blocking: {start_time} ~ {end_time}")
             
             # Generate available slots based ONLY on other reservations
             # This means the current reservation's time will be shown as available
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
             end_date = start_date 
             
-            logging.info(f"[Modification] Calling _generate_all_slots with:")
-            logging.info(f"  start_date: {start_date}")
-            logging.info(f"  end_date: {end_date}")
-            logging.info(f"  blocking events: {len(other_events)}")
+            print(f"[Modification] Calling _generate_all_slots with:")
+            print(f"  start_date: {start_date}")
+            print(f"  end_date: {end_date}")
+            print(f"  blocking events: {len(other_events)}")
             
             available_slots = self._generate_all_slots(start_date, end_date, other_events)
-            logging.info(f"[Modification] Generated {len(available_slots)} available slot(s)")
+            print(f"[Modification] Generated {len(available_slots)} available slot(s)")
             for slot in available_slots:
-                logging.info(f"  ✅ Available: {slot['time']} ~ {slot['end_time']}")
+                print(f"  ✅ Available: {slot['time']} ~ {slot['end_time']}")
             
             return available_slots
             
         except Exception as e:
-            logging.error(f"Failed to get available slots for modification: {e}")
+            print(f"Failed to get available slots for modification: {e}")
             return []
     
     def get_available_slots_for_service(self, date_str: str, service_name: str, exclude_reservation_id: str = None) -> List[Dict]:
@@ -746,7 +748,7 @@ class GoogleCalendarHelper:
             return None
             
         except Exception as e:
-            logging.error(f"Failed to get reservation by ID {reservation_id}: {e}")
+            print(f"Failed to get reservation by ID {reservation_id}: {e}")
             return None
     
     def cancel_reservation_by_id(self, reservation_id: str) -> bool:
@@ -756,7 +758,7 @@ class GoogleCalendarHelper:
             event = self.get_reservation_by_id(reservation_id)
             
             if not event:
-                logging.warning(f"Reservation {reservation_id} not found in calendar")
+                print(f"Reservation {reservation_id} not found in calendar")
                 return False
             
             # Delete the event
@@ -765,11 +767,11 @@ class GoogleCalendarHelper:
                 eventId=event['id']
             ).execute()
             
-            logging.info(f"Successfully cancelled reservation {reservation_id}")
+            print(f"Successfully cancelled reservation {reservation_id}")
             return True
             
         except Exception as e:
-            logging.error(f"Failed to cancel reservation {reservation_id}: {e}")
+            print(f"Failed to cancel reservation {reservation_id}: {e}")
             return False
 
     def _get_staff_email(self, staff_name: str) -> Optional[str]:
@@ -780,3 +782,7 @@ class GoogleCalendarHelper:
             return os.getenv(email_env)
         return None
 
+
+if __name__ == "__main__":
+    google_calendar = GoogleCalendarHelper()
+    print(google_calendar.get_available_slots_for_modification("2025-10-16", "RES-20251016-1611"))
