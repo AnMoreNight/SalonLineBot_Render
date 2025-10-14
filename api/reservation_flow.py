@@ -89,7 +89,7 @@ class ReservationFlow:
         
         # Convert string date to datetime objects for the specific day
         start_date = datetime.strptime(selected_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)  # Next day at 00:00
+        end_date = start_date  # Next day at 00:00
         
         # Get all slots for the date range and filter for the specific date
         all_slots = self.google_calendar.get_available_slots(start_date, end_date)

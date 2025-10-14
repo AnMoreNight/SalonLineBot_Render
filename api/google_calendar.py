@@ -587,7 +587,7 @@ class GoogleCalendarHelper:
         try:
             # Get start of day (00:00:00) and end of day (23:59:59)
             start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(days=1)  # Next day at 00:00:00
+            end_date = start_date  # Next day at 00:00:00
             
             logging.info(f"[Get Events] Fetching events from {start_date.isoformat()} to {end_date.isoformat()}")
             
