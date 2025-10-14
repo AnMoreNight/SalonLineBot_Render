@@ -1469,6 +1469,14 @@ class ReservationFlow:
 
 別の日付または別のサービスをご検討いただくか、スタッフまでお問い合わせください。"""
         
+        # Compute new end time based on new service duration for Sheets/confirmation
+        try:
+            from datetime import datetime, timedelta
+            start_dt_for_service = datetime.strptime(reservation["start_time"], "%H:%M")
+            new_end_time = (start_dt_for_service + timedelta(minutes=new_duration)).strftime("%H:%M")
+        except Exception:
+            new_end_time = reservation.get("end_time", "")
+
         # Update Google Calendar: change service and adjust duration on the exact event by ID
         calendar_success = self.google_calendar.modify_reservation_time(
             reservation["reservation_id"],
@@ -1480,17 +1488,23 @@ class ReservationFlow:
         if not calendar_success:
             return "申し訳ございません。カレンダーの更新に失敗しました。スタッフまでお問い合わせください。"
         
-        # Update Google Sheets
+        # Update Google Sheets (ensure End Time reflects new service duration)
         field_updates = {
             "Service": new_service,
             "Duration (min)": new_duration,
-            "Price": new_price
+            "Price": new_price,
+            "End Time": new_end_time
         }
         sheets_success = sheets_logger.update_reservation_data(reservation["reservation_id"], field_updates)
         
         if not sheets_success:
             logging.warning(f"Failed to update sheets for reservation {reservation['reservation_id']}")
         
+        # Update local reservation snapshot for confirmation message
+        reservation["service"] = new_service
+        reservation["duration"] = new_duration
+        reservation["end_time"] = new_end_time
+
         # Clear user state
         del self.user_states[user_id]
         
@@ -1498,7 +1512,7 @@ class ReservationFlow:
 
 📋 変更内容：
 🆔 予約ID：{reservation['reservation_id']}
-📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{new_end_time}
 💇 サービス：{new_service} ({new_duration}分・{new_price:,}円)
 👨‍💼 担当者：{reservation['staff']}
 
@@ -1530,6 +1544,16 @@ class ReservationFlow:
         if not new_staff:
             available_staff = "、".join(self.staff_members.keys())
             return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff}\n\n上記から選択してください。"
+        
+        # Update Google Calendar summary to reflect new staff
+        calendar_success = self.google_calendar.modify_reservation_time(
+            reservation["reservation_id"],
+            reservation["date"],
+            reservation["start_time"],
+            new_staff=new_staff
+        )
+        if not calendar_success:
+            return "申し訳ございません。カレンダーの更新に失敗しました。スタッフまでお問い合わせください。"
         
         # Update Google Sheets
         field_updates = {

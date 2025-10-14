@@ -281,10 +281,11 @@ class GoogleCalendarHelper:
             print(f"Failed to cancel reservation by ID {reservation_id}: {e}")
             return False
 
-    def modify_reservation_time(self, reservation_id: str, new_date: str, new_time: str, new_service: Optional[str] = None) -> bool:
+    def modify_reservation_time(self, reservation_id: str, new_date: str, new_time: str, new_service: Optional[str] = None, new_staff: Optional[str] = None) -> bool:
         """Update the start/end time for a reservation by its ID.
 
         If new_service is provided, adjust duration by that service and update summary.
+        If new_staff is provided, update summary staff name.
         Otherwise preserve the original duration.
         """
         try:
@@ -342,17 +343,20 @@ class GoogleCalendarHelper:
                 'timeZone': self.timezone,
             }
             
-            # If changing service, update summary while preserving client/staff
-            if new_service:
+            # If changing service or staff, update summary while preserving other parts
+            if new_service or new_staff:
                 summary = event.get('summary', '') or ''
                 # Expected format: "[予約] SERVICE - CLIENT (STAFF)"
                 try:
                     import re
                     m = re.search(r"^\[予約\] (.+) - (.+) \((.+)\)$", summary)
                     if m:
+                        current_service = m.group(1)
                         client = m.group(2)
-                        staff = m.group(3)
-                        event['summary'] = f"[予約] {new_service} - {client} ({staff})"
+                        current_staff = m.group(3)
+                        updated_service = new_service if new_service else current_service
+                        updated_staff = new_staff if new_staff else current_staff
+                        event['summary'] = f"[予約] {updated_service} - {client} ({updated_staff})"
                 except Exception:
                     pass
 
