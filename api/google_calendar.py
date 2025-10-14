@@ -582,21 +582,27 @@ class GoogleCalendarHelper:
         return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
     
     def get_events_for_date(self, date_str: str) -> List[Dict]:
-        """Get all events for a specific date"""
+        """Get all events for a specific date (timezone-aware)"""
         if not self.service or not self.calendar_id:
             return []
         
         try:
-            # Get start of day (00:00:00) and end of day (23:59:59)
-            start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(days=1)   # Next day at 00:00:00
+            # Create timezone-aware datetime objects for Tokyo time
+            tz = pytz.timezone(self.timezone)
             
-            print(f"[Get Events] Fetching events from {start_date.isoformat()} to {end_date.isoformat()}")
+            # Get start of day (00:00:00 Tokyo time)
+            start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+            start_date_aware = tz.localize(start_date)
+            
+            # Get end of day (next day 00:00:00 Tokyo time)
+            end_date_aware = start_date_aware + timedelta(days=1)
+            
+            print(f"[Get Events] Fetching events from {start_date_aware.isoformat()} to {end_date_aware.isoformat()}")
             
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
-                timeMin=start_date.isoformat() + 'Z',
-                timeMax=end_date.isoformat() + 'Z',
+                timeMin=start_date_aware.isoformat(),
+                timeMax=end_date_aware.isoformat(),
                 singleEvents=True,
                 orderBy='startTime'
             ).execute()
