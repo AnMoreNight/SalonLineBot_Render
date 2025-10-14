@@ -571,7 +571,7 @@ class GoogleCalendarHelper:
         
         try:
             start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(days=1)
+            end_date = start_date
             
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
@@ -597,16 +597,30 @@ class GoogleCalendarHelper:
         try:
             # Get all events for the date
             events = self.get_events_for_date(date_str)
+            logging.info(f"[Modification] Date: {date_str}, Total events: {len(events)}, Exclude ID: {exclude_reservation_id}")
             
             # Filter out the reservation being modified (if any)
             if exclude_reservation_id:
+                events_before = len(events)
                 events = [e for e in events if exclude_reservation_id not in e.get('description', '')]
+                logging.info(f"[Modification] Filtered {events_before - len(events)} event(s), Remaining: {len(events)}")
+                
+                # Log remaining events for debugging
+                for e in events:
+                    start = e.get('start', {}).get('dateTime', 'N/A')
+                    end = e.get('end', {}).get('dateTime', 'N/A')
+                    logging.info(f"  Remaining: {start} ~ {end}")
             
             # Generate available slots
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
             end_date = start_date
             
-            return self._generate_all_slots(start_date, end_date, events)
+            available_slots = self._generate_all_slots(start_date, end_date, events)
+            logging.info(f"[Modification] Generated {len(available_slots)} available slot(s)")
+            for slot in available_slots:
+                logging.info(f"  Available: {slot['time']} ~ {slot['end_time']}")
+            
+            return available_slots
             
         except Exception as e:
             logging.error(f"Failed to get available slots for modification: {e}")

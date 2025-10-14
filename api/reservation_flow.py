@@ -1207,11 +1207,11 @@ class ReservationFlow:
             return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20"
     
     def _show_available_times_for_date(self, user_id: str, date: str) -> str:
-        """Show available times for a specific date"""
+        """Show available times for a specific date - includes current reservation's time"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Get available slots for the date (excluding current reservation)
+        # Get available slots for the date (excluding current reservation to free up that time)
         available_slots = self.google_calendar.get_available_slots_for_modification(
             date, 
             reservation["reservation_id"]
@@ -1225,17 +1225,36 @@ class ReservationFlow:
         self.user_states[user_id]["available_slots"] = available_slots
         self.user_states[user_id]["step"] = "modify_confirm"
         
-        # Create time options message
+        # Create time options message with current reservation marker
         time_options = []
+        current_start = reservation.get("start_time", "")
+        current_end = reservation.get("end_time", "")
+        
         for slot in available_slots:
-            current_marker = " (現在の予約)" if (slot["time"] == reservation["start_time"] and date == reservation["date"]) else ""
-            time_options.append(f"✅ {slot['time']}~{slot['end_time']}{current_marker}")
+            # Check if this slot contains or overlaps with the current reservation time
+            slot_start = slot["time"]
+            slot_end = slot["end_time"]
+            
+            # Mark as current reservation if the times match exactly or if slot covers current time
+            is_current = False
+            if date == reservation.get("date"):
+                # Check if current reservation falls within this available slot
+                if slot_start <= current_start < slot_end or slot_start < current_end <= slot_end:
+                    is_current = True
+                # Or exact match
+                elif slot_start == current_start and slot_end == current_end:
+                    is_current = True
+            
+            current_marker = " (現在の予約時間を含む)" if is_current else ""
+            time_options.append(f"✅ {slot_start}~{slot_end}{current_marker}")
         
         return f"""📅 {date} の利用可能な時間：
 {chr(10).join(time_options)}
 
 新しい時間を「開始時間~終了時間」の形式で入力してください。
-例）13:00~14:00"""
+例）13:00~14:00
+
+💡 現在の予約時間も選択可能です（変更なしの確認）"""
     
     def _handle_service_modification(self, user_id: str, message: str) -> str:
         """Handle service modification with duration validation"""
