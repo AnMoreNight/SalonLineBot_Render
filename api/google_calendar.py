@@ -527,28 +527,43 @@ class GoogleCalendarHelper:
         business_start = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["start"])))
         business_end = tz.localize(datetime.combine(date, datetime.min.time().replace(hour=business_period["end"])))
         
+        logging.info(f"[Find Periods] Business: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}, Events: {len(events)}")
+        
         # Convert events to datetime ranges and merge overlapping ones
         available_periods = []
         for event in events:
             event_start = datetime.fromisoformat(event['start'].get('dateTime', event['start'].get('date', '')))
             event_end = datetime.fromisoformat(event['end'].get('dateTime', event['end'].get('date', '')))
             
+            logging.info(f"[Find Periods] Processing event: {event_start.strftime('%H:%M')} ~ {event_end.strftime('%H:%M')}")
+            logging.info(f"  Current business_start: {business_start.strftime('%H:%M')}")
+            
             if event_start < business_end and event_end > business_start:
+                logging.info(f"  Event overlaps with business hours")
                 if event_start > business_start:
+                    logging.info(f"  Gap found: {business_start.strftime('%H:%M')} ~ {event_start.strftime('%H:%M')}")
                     available_periods.append({
                         'start': business_start.strftime("%H:%M"),
                         'end': event_start.strftime("%H:%M")
                     })
-                    business_start = tz.localize(event_end) if event_start.tzinfo is None else event_end
+                    business_start = event_end
+                    logging.info(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
                 elif event_start == business_start:
-                    business_start = tz.localize(event_end) if event_end.tzinfo is None else event_end
+                    logging.info(f"  Event starts at business_start, moving to: {event_end.strftime('%H:%M')}")
+                    business_start = event_end
+                    logging.info(f"  Updated business_start to: {business_start.strftime('%H:%M')}")
+            else:
+                logging.info(f"  Event outside business hours, skipping")
 
+        logging.info(f"[Find Periods] After all events, business_start: {business_start.strftime('%H:%M')}, business_end: {business_end.strftime('%H:%M')}")
         if business_start < business_end:
+            logging.info(f"[Find Periods] Final gap: {business_start.strftime('%H:%M')} ~ {business_end.strftime('%H:%M')}")
             available_periods.append({
                 'start': business_start.strftime("%H:%M"),
                 'end': business_end.strftime("%H:%M")
             })
         
+        logging.info(f"[Find Periods] Total available periods: {len(available_periods)}")
         return available_periods
     
     def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
@@ -638,10 +653,21 @@ class GoogleCalendarHelper:
             
             logging.info(f"[Modification] Using {len(other_events)} other events for blocking")
             
+            # Log the blocking events details
+            for e in other_events:
+                start_time = e.get('start', {}).get('dateTime', 'N/A')
+                end_time = e.get('end', {}).get('dateTime', 'N/A')
+                logging.info(f"  🚫 Blocking: {start_time} ~ {end_time}")
+            
             # Generate available slots based ONLY on other reservations
             # This means the current reservation's time will be shown as available
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
-            end_date = start_date + timedelta(days=1)
+            end_date = start_date 
+            
+            logging.info(f"[Modification] Calling _generate_all_slots with:")
+            logging.info(f"  start_date: {start_date}")
+            logging.info(f"  end_date: {end_date}")
+            logging.info(f"  blocking events: {len(other_events)}")
             
             available_slots = self._generate_all_slots(start_date, end_date, other_events)
             logging.info(f"[Modification] Generated {len(available_slots)} available slot(s)")
