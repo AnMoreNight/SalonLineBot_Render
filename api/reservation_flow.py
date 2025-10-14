@@ -1391,7 +1391,7 @@ class ReservationFlow:
         
         # Update Google Calendar with the selected date
         calendar_success = self.google_calendar.modify_reservation_time(
-            reservation["client_name"], 
+            reservation["reservation_id"], 
             selected_date,  # Use selected date instead of original date
             start_time
         )

@@ -281,40 +281,58 @@ class GoogleCalendarHelper:
             print(f"Failed to cancel reservation by ID {reservation_id}: {e}")
             return False
 
-    def modify_reservation_time(self, client_name: str, new_date: str, new_time: str) -> bool:
-        """Update the start/end time for the client's upcoming reservation.
+    def modify_reservation_time(self, reservation_id: str, new_date: str, new_time: str) -> bool:
+        """Update the start/end time for a reservation by its ID.
 
-        Keeps other event fields intact; infers duration from summary/description if possible,
-        otherwise defaults to 60 minutes.
+        Keeps other event fields intact; preserves the original duration.
         """
-        event = self._find_upcoming_event_by_client(client_name)
-        if not event:
-            return False
-
-        # Infer service name from summary like "[予約] カット - Name (Staff)"
-        summary = event.get('summary', '')
-        inferred_service = None
         try:
-            # Extract the part between "[予約] " and " -"
-            if summary.startswith("[予約]") and ' -' in summary:
-                inferred_service = summary.replace("[予約] ", "", 1).split(" -", 1)[0].strip()
-        except Exception:
-            pass
+            # Find the event by reservation ID
+            event = self.get_reservation_by_id(reservation_id)
+            if not event:
+                print(f"Reservation {reservation_id} not found")
+                return False
 
-        duration_minutes = self._get_service_duration_minutes(inferred_service or "")
+            # Extract current event details
+            current_start = event.get('start', {}).get('dateTime', '')
+            current_end = event.get('end', {}).get('dateTime', '')
+            
+            if not current_start:
+                print(f"No start time found for reservation {reservation_id}")
+                return False
 
-        try:
-            start_dt = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M")
-            end_dt = start_dt + timedelta(minutes=duration_minutes)
-            start_iso = start_dt.isoformat()
-            end_iso = end_dt.isoformat()
+            # Parse current datetime
+            start_dt = datetime.fromisoformat(current_start)
+            
+            # Apply new date and time
+            new_date_obj = datetime.strptime(new_date, "%Y-%m-%d")
+            new_time_obj = datetime.strptime(new_time, "%H:%M")
+            
+            # Update the datetime
+            start_dt = start_dt.replace(
+                year=new_date_obj.year,
+                month=new_date_obj.month,
+                day=new_date_obj.day,
+                hour=new_time_obj.hour,
+                minute=new_time_obj.minute
+            )
+            
+            # Calculate end time (preserve original duration)
+            if current_end:
+                current_end_dt = datetime.fromisoformat(current_end)
+                duration = current_end_dt - datetime.fromisoformat(current_start)
+                end_dt = start_dt + duration
+            else:
+                # Default 60 minutes if no end time
+                end_dt = start_dt + timedelta(minutes=60)
 
+            # Update the event
             event['start'] = {
-                'dateTime': start_iso,
+                'dateTime': start_dt.isoformat(),
                 'timeZone': self.timezone,
             }
             event['end'] = {
-                'dateTime': end_iso,
+                'dateTime': end_dt.isoformat(),
                 'timeZone': self.timezone,
             }
 
@@ -324,119 +342,13 @@ class GoogleCalendarHelper:
                 body=event
             ).execute()
 
-            print(f"Modified reservation time for {client_name}: {updated.get('htmlLink')}")
-            return True
-        except Exception as e:
-            print(f"Failed to modify reservation time: {e}")
-            return False
-        
-        try:
-            # Parse date and time
-            date_str = reservation_data['date']
-            service = reservation_data['service']
-            staff = reservation_data['staff']
-            
-            # Handle both single time and time range
-            if 'start_time' in reservation_data and 'end_time' in reservation_data:
-                start_time_str = reservation_data['start_time']
-                end_time_str = reservation_data['end_time']
-                
-                # Calculate start and end datetime
-                start_datetime = datetime.strptime(f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M")
-                end_datetime = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M")
-            else:
-                # Fallback to single time (backward compatibility)
-                time_str = reservation_data['time']
-                start_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-                
-                # Get service duration and calculate end time
-                duration_minutes = self._get_service_duration_minutes(service)
-                end_datetime = start_datetime + timedelta(minutes=duration_minutes)
-            
-            # Calculate duration for display purposes
-            duration_minutes = int((end_datetime - start_datetime).total_seconds() / 60)
-            
-            # Format for Google Calendar API
-            start_iso = start_datetime.isoformat()
-            end_iso = end_datetime.isoformat()
-            
-            # Get reservation ID
-            reservation_id = reservation_data.get('reservation_id', self.generate_reservation_id(date_str))
-            
-            # Build event details
-            event_title = f"[予約] {service} - {client_name} ({staff})"
-            
-            # Get location from KB data if available
-            # location = self._get_location_from_kb()
-            
-            # Build description
-            description = f"""
-予約ID: {reservation_id}
-サービス: {service}
-担当者: {staff}
-お客様: {client_name}
-所要時間: {duration_minutes}分
-予約元: LINE Bot
-            """.strip()
-            
-            # Create event
-            event = {
-                'summary': event_title,
-                'description': description,
-                'start': {
-                    'dateTime': start_iso,
-                    'timeZone': self.timezone,
-                },
-                'end': {
-                    'dateTime': end_iso,
-                    'timeZone': self.timezone,
-                },
-                # 'location': location,
-                # 'reminders': {
-                #     'useDefault': False,
-                #     'overrides': [
-                #         {'method': 'popup', 'minutes': 30},
-                #         {'method': 'popup', 'minutes': 60},
-                #     ],
-                # },
-            }
-            
-            # Add staff as attendee if not "未指定"
-            if staff != "未指定":
-                staff_email = self._get_staff_email(staff)
-                if staff_email:
-                    event['attendees'] = [{'email': staff_email}]
-            
-            # Create the event
-            created_event = self.service.events().insert(
-                calendarId=self.calendar_id,
-                body=event
-            ).execute()
-            
-            print(f"Calendar event created: {created_event.get('htmlLink')}")
+            print(f"Successfully modified reservation {reservation_id}")
+            print(f"  New time: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ {end_dt.strftime('%H:%M')}")
             return True
             
-        except HttpError as e:
-            print(f"Google Calendar API error: {e}")
-            return False
         except Exception as e:
-            print(f"Failed to create calendar event: {e}")
+            print(f"Failed to modify reservation time for {reservation_id}: {e}")
             return False
-    
-    # def _get_location_from_kb(self) -> str:
-    #     """Get location from KB data"""
-    #     try:
-    #         with open("api/data/kb.json", 'r', encoding='utf-8') as f:
-    #             kb_data = json.load(f)
-            
-    #         for item in kb_data:
-    #             if item.get('キー') == 'ADDRESS':
-    #                 return item.get('例（置換値）', '')
-            
-    #         return ""
-    #     except Exception as e:
-    #         print(f"Could not load location from KB: {e}")
-    #         return ""
     
     def get_available_slots(self, start_date: datetime, end_date: datetime) -> list:
         """
