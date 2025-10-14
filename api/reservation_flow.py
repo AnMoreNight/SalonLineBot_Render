@@ -1211,6 +1211,12 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
+        logging.info(f"[Show Times] User modifying reservation:")
+        logging.info(f"  ID: {reservation.get('reservation_id', 'Unknown')}")
+        logging.info(f"  Date: {reservation.get('date', 'Unknown')}")
+        logging.info(f"  Time: {reservation.get('start_time', '?')}~{reservation.get('end_time', '?')}")
+        logging.info(f"  Service: {reservation.get('service', 'Unknown')}")
+        
         # Get available slots for the date (excluding current reservation to free up that time)
         available_slots = self.google_calendar.get_available_slots_for_modification(
             date, 

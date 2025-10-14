@@ -615,13 +615,25 @@ class GoogleCalendarHelper:
             if exclude_reservation_id:
                 for e in all_events:
                     description = e.get('description', '')
+                    event_start = e.get('start', {}).get('dateTime', 'N/A')
+                    event_end = e.get('end', {}).get('dateTime', 'N/A')
+                    
+                    # Extract reservation ID from description for debugging
+                    event_res_id = "Unknown"
+                    if '予約ID:' in description:
+                        event_res_id = description.split('予約ID:')[1].split('\n')[0].strip()
+                    
                     # Check if this is the reservation being modified
                     if f"予約ID: {exclude_reservation_id}" in description:
                         current_reservation = e
-                        logging.info(f"  📌 Current reservation: {e.get('summary', 'N/A')} (ID: {exclude_reservation_id})")
+                        logging.info(f"  📌 Current reservation (INCLUDE in slots): {e.get('summary', 'N/A')}")
+                        logging.info(f"     Time: {event_start} ~ {event_end}")
+                        logging.info(f"     ID: {event_res_id}")
                     else:
                         other_events.append(e)
-                        logging.info(f"  🚫 Other reservation: {e.get('summary', 'N/A')}")
+                        logging.info(f"  🚫 Other reservation (BLOCK slots): {e.get('summary', 'N/A')}")
+                        logging.info(f"     Time: {event_start} ~ {event_end}")
+                        logging.info(f"     ID: {event_res_id}")
             else:
                 other_events = all_events
             
