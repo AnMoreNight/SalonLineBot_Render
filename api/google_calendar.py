@@ -540,7 +540,7 @@ class GoogleCalendarHelper:
             
             if event_start <= business_end and event_end >= business_start:
                 logging.info(f"  Event overlaps with business hours")
-                if event_start >= business_start:
+                if event_start > business_start:
                     logging.info(f"  Gap found: {business_start.strftime('%H:%M')} ~ {event_start.strftime('%H:%M')}")
                     available_periods.append({
                         'start': business_start.strftime("%H:%M"),
