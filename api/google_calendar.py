@@ -593,7 +593,10 @@ class GoogleCalendarHelper:
             return []
     
     def get_available_slots_for_modification(self, date_str: str, exclude_reservation_id: str = None) -> List[Dict]:
-        """Get available slots including current reservation for modification"""
+        """
+        Get available slots for modification - INCLUDES the user's current reservation time,
+        EXCLUDES other reservations
+        """
         if not self.service or not self.calendar_id:
             return self._generate_fallback_slots(
                 datetime.strptime(date_str, "%Y-%m-%d"),
@@ -602,48 +605,37 @@ class GoogleCalendarHelper:
         
         try:
             # Get all events for the date
-            events = self.get_events_for_date(date_str)
-            logging.info(f"[Modification] Date: {date_str}, Total events: {len(events)}, Exclude ID: {exclude_reservation_id}")
+            all_events = self.get_events_for_date(date_str)
+            logging.info(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}")
             
-            # Filter out the reservation being modified (if any)
+            # Separate the current reservation from other reservations
+            current_reservation = None
+            other_events = []
+            
             if exclude_reservation_id:
-                events_before = len(events)
-                logging.info(f"[Modification] Looking to exclude reservation: {exclude_reservation_id}")
-                
-                # Filter with better matching - check for "予約ID: {id}" pattern
-                filtered_events = []
-                for e in events:
+                for e in all_events:
                     description = e.get('description', '')
-                    # Check if this event's reservation ID matches the one to exclude
-                    # Look for exact match with "予約ID: {reservation_id}" pattern
+                    # Check if this is the reservation being modified
                     if f"予約ID: {exclude_reservation_id}" in description:
-                        logging.info(f"  ❌ Excluding event: {e.get('summary', 'N/A')} (ID: {exclude_reservation_id})")
+                        current_reservation = e
+                        logging.info(f"  📌 Current reservation: {e.get('summary', 'N/A')} (ID: {exclude_reservation_id})")
                     else:
-                        filtered_events.append(e)
-                        logging.info(f"  ✅ Keeping event: {e.get('summary', 'N/A')}")
-                
-                events = filtered_events
-                logging.info(f"[Modification] Filtered {events_before - len(events)} event(s), Remaining: {len(events)}")
-                
-                # Log remaining events for debugging
-                for e in events:
-                    start = e.get('start', {}).get('dateTime', 'N/A')
-                    end = e.get('end', {}).get('dateTime', 'N/A')
-                    desc = e.get('description', '')
-                    # Extract reservation ID from description
-                    res_id = "Unknown"
-                    if '予約ID:' in desc:
-                        res_id = desc.split('予約ID:')[1].split('\n')[0].strip()
-                    logging.info(f"  Remaining event: {start} ~ {end} (ID: {res_id})")
+                        other_events.append(e)
+                        logging.info(f"  🚫 Other reservation: {e.get('summary', 'N/A')}")
+            else:
+                other_events = all_events
             
-            # Generate available slots
+            logging.info(f"[Modification] Using {len(other_events)} other events for blocking")
+            
+            # Generate available slots based ONLY on other reservations
+            # This means the current reservation's time will be shown as available
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
             end_date = start_date
             
-            available_slots = self._generate_all_slots(start_date, end_date, events)
+            available_slots = self._generate_all_slots(start_date, end_date, other_events)
             logging.info(f"[Modification] Generated {len(available_slots)} available slot(s)")
             for slot in available_slots:
-                logging.info(f"  Available: {slot['time']} ~ {slot['end_time']}")
+                logging.info(f"  ✅ Available: {slot['time']} ~ {slot['end_time']}")
             
             return available_slots
             
