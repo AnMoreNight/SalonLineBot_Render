@@ -570,8 +570,11 @@ class GoogleCalendarHelper:
             return []
         
         try:
+            # Get start of day (00:00:00) and end of day (23:59:59)
             start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date
+            end_date = start_date + timedelta(days=1)  # Next day at 00:00:00
+            
+            logging.info(f"[Get Events] Fetching events from {start_date.isoformat()} to {end_date.isoformat()}")
             
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
@@ -581,7 +584,10 @@ class GoogleCalendarHelper:
                 orderBy='startTime'
             ).execute()
             
-            return events_result.get('items', [])
+            events = events_result.get('items', [])
+            logging.info(f"[Get Events] Found {len(events)} event(s) for {date_str}")
+            
+            return events
         except Exception as e:
             logging.error(f"Failed to get events for date {date_str}: {e}")
             return []
@@ -602,14 +608,33 @@ class GoogleCalendarHelper:
             # Filter out the reservation being modified (if any)
             if exclude_reservation_id:
                 events_before = len(events)
-                events = [e for e in events if exclude_reservation_id not in e.get('description', '')]
+                logging.info(f"[Modification] Looking to exclude reservation: {exclude_reservation_id}")
+                
+                # Filter with better matching - check for "予約ID: {id}" pattern
+                filtered_events = []
+                for e in events:
+                    description = e.get('description', '')
+                    # Check if this event's reservation ID matches the one to exclude
+                    # Look for exact match with "予約ID: {reservation_id}" pattern
+                    if f"予約ID: {exclude_reservation_id}" in description:
+                        logging.info(f"  ❌ Excluding event: {e.get('summary', 'N/A')} (ID: {exclude_reservation_id})")
+                    else:
+                        filtered_events.append(e)
+                        logging.info(f"  ✅ Keeping event: {e.get('summary', 'N/A')}")
+                
+                events = filtered_events
                 logging.info(f"[Modification] Filtered {events_before - len(events)} event(s), Remaining: {len(events)}")
                 
                 # Log remaining events for debugging
                 for e in events:
                     start = e.get('start', {}).get('dateTime', 'N/A')
                     end = e.get('end', {}).get('dateTime', 'N/A')
-                    logging.info(f"  Remaining: {start} ~ {end}")
+                    desc = e.get('description', '')
+                    # Extract reservation ID from description
+                    res_id = "Unknown"
+                    if '予約ID:' in desc:
+                        res_id = desc.split('予約ID:')[1].split('\n')[0].strip()
+                    logging.info(f"  Remaining event: {start} ~ {end} (ID: {res_id})")
             
             # Generate available slots
             start_date = datetime.strptime(date_str, "%Y-%m-%d")
