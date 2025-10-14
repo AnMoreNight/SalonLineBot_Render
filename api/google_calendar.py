@@ -281,10 +281,11 @@ class GoogleCalendarHelper:
             print(f"Failed to cancel reservation by ID {reservation_id}: {e}")
             return False
 
-    def modify_reservation_time(self, reservation_id: str, new_date: str, new_time: str) -> bool:
+    def modify_reservation_time(self, reservation_id: str, new_date: str, new_time: str, new_service: Optional[str] = None) -> bool:
         """Update the start/end time for a reservation by its ID.
 
-        Keeps other event fields intact; preserves the original duration.
+        If new_service is provided, adjust duration by that service and update summary.
+        Otherwise preserve the original duration.
         """
         try:
             # Find the event by reservation ID
@@ -317,14 +318,19 @@ class GoogleCalendarHelper:
                 minute=new_time_obj.minute
             )
             
-            # Calculate end time (preserve original duration)
-            if current_end:
-                current_end_dt = datetime.fromisoformat(current_end)
-                duration = current_end_dt - datetime.fromisoformat(current_start)
-                end_dt = start_dt + duration
+            # Calculate end time
+            if new_service:
+                duration_minutes = self._get_service_duration_minutes(new_service)
+                end_dt = start_dt + timedelta(minutes=duration_minutes)
             else:
-                # Default 60 minutes if no end time
-                end_dt = start_dt + timedelta(minutes=60)
+                # Preserve original duration
+                if current_end:
+                    current_end_dt = datetime.fromisoformat(current_end)
+                    duration = current_end_dt - datetime.fromisoformat(current_start)
+                    end_dt = start_dt + duration
+                else:
+                    # Default 60 minutes if no end time
+                    end_dt = start_dt + timedelta(minutes=60)
 
             # Update the event
             event['start'] = {
@@ -335,6 +341,20 @@ class GoogleCalendarHelper:
                 'dateTime': end_dt.isoformat(),
                 'timeZone': self.timezone,
             }
+            
+            # If changing service, update summary while preserving client/staff
+            if new_service:
+                summary = event.get('summary', '') or ''
+                # Expected format: "[予約] SERVICE - CLIENT (STAFF)"
+                try:
+                    import re
+                    m = re.search(r"^\[予約\] (.+) - (.+) \((.+)\)$", summary)
+                    if m:
+                        client = m.group(2)
+                        staff = m.group(3)
+                        event['summary'] = f"[予約] {new_service} - {client} ({staff})"
+                except Exception:
+                    pass
 
             updated = self.service.events().update(
                 calendarId=self.calendar_id,

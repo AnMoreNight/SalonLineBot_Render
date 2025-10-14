@@ -1469,11 +1469,12 @@ class ReservationFlow:
 
 別の日付または別のサービスをご検討いただくか、スタッフまでお問い合わせください。"""
         
-        # Update Google Calendar (recalculate end time)
+        # Update Google Calendar: change service and adjust duration on the exact event by ID
         calendar_success = self.google_calendar.modify_reservation_time(
-            reservation["client_name"], 
-            reservation["date"], 
-            reservation["start_time"]
+            reservation["reservation_id"],
+            reservation["date"],
+            reservation["start_time"],
+            new_service=new_service
         )
         
         if not calendar_success:
