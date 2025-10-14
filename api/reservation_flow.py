@@ -1315,6 +1315,40 @@ class ReservationFlow:
         reservation = state["reservation_data"]
         modification_type = state["modification_type"]
         
+        # Check if modification is within 2 hours of reservation start time
+        try:
+            from datetime import datetime, timedelta
+            import pytz
+            
+            # Get current time in Tokyo timezone
+            tokyo_tz = pytz.timezone('Asia/Tokyo')
+            current_time = datetime.now(tokyo_tz)
+            
+            # Parse reservation date and start time
+            reservation_date = reservation["date"]
+            reservation_start_time = reservation["start_time"]
+            
+            # Create reservation datetime in Tokyo timezone
+            reservation_datetime = datetime.strptime(f"{reservation_date} {reservation_start_time}", "%Y-%m-%d %H:%M")
+            reservation_datetime = tokyo_tz.localize(reservation_datetime)
+            
+            # Calculate time difference
+            time_diff = reservation_datetime - current_time
+            
+            # Check if within 2 hours (120 minutes)
+            if time_diff.total_seconds() <= 7200:  # 2 hours = 7200 seconds
+                return f"""申し訳ございませんが、予約開始時刻の2時間以内の変更はお受けできません。
+
+📅 予約日時：{reservation_date} {reservation_start_time}
+⏰ 現在時刻：{current_time.strftime('%Y-%m-%d %H:%M')}
+⏱️ 残り時間：{int(time_diff.total_seconds() / 3600)}時間{int((time_diff.total_seconds() % 3600) / 60)}分
+
+緊急の場合は直接サロンまでお電話ください。"""
+            
+        except Exception as e:
+            logging.error(f"Error checking modification time limit: {e}")
+            # Continue with modification if time check fails
+        
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
