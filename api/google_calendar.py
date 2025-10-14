@@ -608,7 +608,6 @@ class GoogleCalendarHelper:
             all_events = self.get_events_for_date(date_str)
             logging.info(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}")
             
-            # Separate the current reservation from other reservations
             current_reservation = None
             other_events = []
             
