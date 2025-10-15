@@ -84,13 +84,19 @@ def handle_message(event: MessageEvent):
         logging.warning(f"Could not fetch user profile for {user_id}: {e}")
         user_name = "Unknown"
     
-    # Send Slack notification for user login (first message from user)
+    # Send Slack notification for user login (only for new users)
     try:
         from api.slack_notifier import send_user_login_notification
-        # Only send login notification for the first message (simple heuristic)
-        # In a real system, you might want to track user sessions more precisely
-        if message_text and not message_text.startswith(('予約', 'キャンセル', '変更', '修正')):
+        from api.user_session_manager import user_session_manager
+        
+        # Check if this is a new user (first time adding bot as friend)
+        if user_session_manager.is_new_user(user_id):
             send_user_login_notification(user_id, user_name)
+            logging.info(f"New user detected: {user_id} ({user_name})")
+        
+        # Mark user as seen (regardless of whether they're new or not)
+        user_session_manager.mark_user_seen(user_id)
+        
     except Exception as e:
         logging.error(f"Failed to send user login notification: {e}")
 
