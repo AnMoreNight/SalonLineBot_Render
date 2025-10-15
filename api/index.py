@@ -84,9 +84,9 @@ def handle_message(event: MessageEvent):
         logging.warning(f"Could not fetch user profile for {user_id}: {e}")
         user_name = "Unknown"
     
-    # Send Slack notification for user login (only for new users)
+    # Send notification for user login (only for new users)
     try:
-        from api.slack_notifier import send_user_login_notification
+        from api.notification_manager import send_user_login_notification
         from api.user_session_manager import user_session_manager
         
         # Check if this is a new user (first time adding bot as friend)
