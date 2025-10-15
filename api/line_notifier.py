@@ -4,7 +4,7 @@ LINE notification service for salon booking system
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import requests
 from dotenv import load_dotenv
@@ -21,13 +21,14 @@ class LineNotifier:
         else:
             logging.info("LINE notifications enabled")
     
-    def send_notification(self, message: str, title: str = None) -> bool:
+    def send_notification(self, message: str, title: str = None, calendar_url: str = None) -> bool:
         """
         Send a notification to LINE
         
         Args:
             message: The main message content
             title: Optional title for the notification
+            calendar_url: Optional calendar URL for clickable button
             
         Returns:
             bool: True if successful, False otherwise
@@ -43,16 +44,40 @@ class LineNotifier:
             else:
                 full_message = f"📢 Salon Booking Notification\n\n{message}"
             
-            # Prepare the payload for LINE Messaging API
-            payload = {
-                "to": self.notification_user_id,
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": full_message
-                    }
-                ]
-            }
+            # If calendar_url is provided, use template message with button
+            if calendar_url:
+                # Prepare template message with button
+                payload = {
+                    "to": self.notification_user_id,
+                    "messages": [
+                        {
+                            "type": "template",
+                            "altText": full_message,
+                            "template": {
+                                "type": "buttons",
+                                "text": full_message,
+                                "actions": [
+                                    {
+                                        "type": "uri",
+                                        "label": "Open Calendar",
+                                        "uri": calendar_url
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            else:
+                # Use regular text message
+                payload = {
+                    "to": self.notification_user_id,
+                    "messages": [
+                        {
+                            "type": "text",
+                            "text": full_message
+                        }
+                    ]
+                }
             
             # Send the request
             headers = {
@@ -92,6 +117,7 @@ class LineNotifier:
     
     def notify_reservation_confirmation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is confirmed"""
+        calendar_url = self._get_calendar_url()
         message = f"✅ **New Reservation Confirmed**\n"
         message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -105,11 +131,13 @@ class LineNotifier:
         
         return self.send_notification(
             message=message,
-            title="📅 New Reservation"
+            title="📅 New Reservation",
+            calendar_url=calendar_url
         )
     
     def notify_reservation_modification(self, old_reservation: Dict[str, Any], new_reservation: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is modified"""
+        calendar_url = self._get_calendar_url()
         message = f"🔄 **Reservation Modified**\n"
         message += f"• Reservation ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -143,11 +171,13 @@ class LineNotifier:
         
         return self.send_notification(
             message=message,
-            title="✏️ Reservation Modified"
+            title="✏️ Reservation Modified",
+            calendar_url=calendar_url
         )
     
     def notify_reservation_cancellation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is cancelled"""
+        calendar_url = self._get_calendar_url()
         message = f"❌ **Reservation Cancelled**\n"
         message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -159,7 +189,56 @@ class LineNotifier:
         
         return self.send_notification(
             message=message,
-            title="🚫 Reservation Cancelled"
+            title="🚫 Reservation Cancelled",
+            calendar_url=calendar_url
+        )
+    
+    def notify_reminder_status(self, success_count: int, total_count: int, failed_reservations: List[Dict[str, Any]]) -> bool:
+        """Send notification about reminder status to manager"""
+        if success_count == total_count and total_count > 0:
+            # All reminders sent successfully
+            message = f"✅ **予約リマインダー送信完了**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: {success_count}件\n"
+            message += f"• 送信失敗: 0件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            message += f"すべてのリマインダーが正常に送信されました。"
+            
+            title = "📅 リマインダー送信完了"
+            
+        elif success_count > 0:
+            # Some reminders sent successfully
+            message = f"⚠️ **予約リマインダー送信結果**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: {success_count}件\n"
+            message += f"• 送信失敗: {total_count - success_count}件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            
+            if failed_reservations:
+                message += f"🚫 **送信失敗した予約:**\n"
+                for res in failed_reservations[:5]:  # Show first 5 failures
+                    message += f"• {res.get('client_name', 'N/A')} - {res.get('date', 'N/A')} {res.get('start_time', 'N/A')}\n"
+                
+                if len(failed_reservations) > 5:
+                    message += f"• ...他 {len(failed_reservations) - 5}件\n"
+            
+            title = "⚠️ リマインダー送信結果"
+            
+        else:
+            # No reminders sent
+            message = f"❌ **予約リマインダー送信失敗**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: 0件\n"
+            message += f"• 送信失敗: {total_count}件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            message += f"すべてのリマインダー送信に失敗しました。\n"
+            message += f"システム管理者にご連絡ください。"
+            
+            title = "❌ リマインダー送信失敗"
+        
+        return self.send_notification(
+            message=message,
+            title=title
         )
     
     def _get_service_duration(self, service_name: str) -> int:
@@ -191,6 +270,16 @@ class LineNotifier:
             return service_info.get("price", 0)
         except Exception:
             return 0
+    
+    def _get_calendar_url(self) -> str:
+        """Get the Google Calendar URL"""
+        try:
+            from api.google_calendar import GoogleCalendarHelper
+            calendar_helper = GoogleCalendarHelper()
+            return calendar_helper.get_calendar_url()
+        except Exception as e:
+            logging.error(f"Error getting calendar URL: {e}")
+            return "https://calendar.google.com/calendar"
 
 
 # Global instance for easy access

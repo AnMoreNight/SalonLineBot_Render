@@ -4,7 +4,7 @@ Supports both Slack and LINE notifications
 """
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 
 class NotificationManager:
@@ -138,6 +138,26 @@ class NotificationManager:
                     success = True
             except Exception as e:
                 logging.error(f"LINE reservation cancellation notification failed: {e}")
+        
+        return success
+    
+    def notify_reminder_status(self, success_count: int, total_count: int, failed_reservations: List[Dict[str, Any]]) -> bool:
+        """Send reminder status notification to manager"""
+        success = False
+        
+        if self.slack_notifier and self.slack_notifier.enabled:
+            try:
+                if self.slack_notifier.notify_reminder_status(success_count, total_count, failed_reservations):
+                    success = True
+            except Exception as e:
+                logging.error(f"Slack reminder status notification failed: {e}")
+        
+        if self.line_notifier and self.line_notifier.enabled:
+            try:
+                if self.line_notifier.notify_reminder_status(success_count, total_count, failed_reservations):
+                    success = True
+            except Exception as e:
+                logging.error(f"LINE reminder status notification failed: {e}")
         
         return success
 

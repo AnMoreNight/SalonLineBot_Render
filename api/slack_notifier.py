@@ -4,7 +4,7 @@ Slack notification service for salon booking system
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import requests
 from dotenv import load_dotenv
@@ -84,6 +84,7 @@ class SlackNotifier:
     
     def notify_reservation_confirmation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is confirmed"""
+        calendar_url = self._get_calendar_url()
         message = f"✅ **New Reservation Confirmed**\n"
         message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -93,7 +94,8 @@ class SlackNotifier:
         message += f"• Staff: {reservation_data.get('staff', 'N/A')}\n"
         message += f"• Duration: {self._get_service_duration(reservation_data.get('service', ''))} minutes\n"
         message += f"• Price: ¥{self._get_service_price(reservation_data.get('service', '')):,}\n"
-        message += f"• Confirmed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"• Confirmed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        message += f"• <{calendar_url}|Open Calendar>"
         
         return self.send_notification(
             message=message,
@@ -103,6 +105,7 @@ class SlackNotifier:
     
     def notify_reservation_modification(self, old_reservation: Dict[str, Any], new_reservation: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is modified"""
+        calendar_url = self._get_calendar_url()
         message = f"🔄 **Reservation Modified**\n"
         message += f"• Reservation ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -134,6 +137,8 @@ class SlackNotifier:
         else:
             message += "• No changes detected"
         
+        message += f"\n• <{calendar_url}|Open Calendar>"
+        
         return self.send_notification(
             message=message,
             title="✏️ Reservation Modified",
@@ -142,6 +147,7 @@ class SlackNotifier:
     
     def notify_reservation_cancellation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is cancelled"""
+        calendar_url = self._get_calendar_url()
         message = f"❌ **Reservation Cancelled**\n"
         message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
         message += f"• Client: {client_name}\n"
@@ -149,12 +155,65 @@ class SlackNotifier:
         message += f"• Time: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
         message += f"• Service: {reservation_data.get('service', 'N/A')}\n"
         message += f"• Staff: {reservation_data.get('staff', 'N/A')}\n"
-        message += f"• Cancelled at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"• Cancelled at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        message += f"• <{calendar_url}|Open Calendar>"
         
         return self.send_notification(
             message=message,
             title="🚫 Reservation Cancelled",
             color="danger"
+        )
+    
+    def notify_reminder_status(self, success_count: int, total_count: int, failed_reservations: List[Dict[str, Any]]) -> bool:
+        """Send notification about reminder status to manager"""
+        if success_count == total_count and total_count > 0:
+            # All reminders sent successfully
+            message = f"✅ **予約リマインダー送信完了**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: {success_count}件\n"
+            message += f"• 送信失敗: 0件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            message += f"すべてのリマインダーが正常に送信されました。"
+            
+            color = "good"
+            title = "📅 リマインダー送信完了"
+            
+        elif success_count > 0:
+            # Some reminders sent successfully
+            message = f"⚠️ **予約リマインダー送信結果**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: {success_count}件\n"
+            message += f"• 送信失敗: {total_count - success_count}件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            
+            if failed_reservations:
+                message += f"🚫 **送信失敗した予約:**\n"
+                for res in failed_reservations[:5]:  # Show first 5 failures
+                    message += f"• {res.get('client_name', 'N/A')} - {res.get('date', 'N/A')} {res.get('start_time', 'N/A')}\n"
+                
+                if len(failed_reservations) > 5:
+                    message += f"• ...他 {len(failed_reservations) - 5}件\n"
+            
+            color = "warning"
+            title = "⚠️ リマインダー送信結果"
+            
+        else:
+            # No reminders sent
+            message = f"❌ **予約リマインダー送信失敗**\n\n"
+            message += f"📊 **送信結果:**\n"
+            message += f"• 送信成功: 0件\n"
+            message += f"• 送信失敗: {total_count}件\n"
+            message += f"• 合計: {total_count}件\n\n"
+            message += f"すべてのリマインダー送信に失敗しました。\n"
+            message += f"システム管理者にご連絡ください。"
+            
+            color = "danger"
+            title = "❌ リマインダー送信失敗"
+        
+        return self.send_notification(
+            message=message,
+            title=title,
+            color=color
         )
     
     def _get_service_duration(self, service_name: str) -> int:
@@ -186,6 +245,16 @@ class SlackNotifier:
             return service_info.get("price", 0)
         except Exception:
             return 0
+    
+    def _get_calendar_url(self) -> str:
+        """Get the Google Calendar URL"""
+        try:
+            from api.google_calendar import GoogleCalendarHelper
+            calendar_helper = GoogleCalendarHelper()
+            return calendar_helper.get_calendar_url()
+        except Exception as e:
+            logging.error(f"Error getting calendar URL: {e}")
+            return "https://calendar.google.com/calendar"
 
 
 # Global instance for easy access

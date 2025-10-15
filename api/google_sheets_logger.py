@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -471,3 +471,60 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Failed to update reservation data: {e}")
             return False
+    
+    def get_reservations_for_date(self, date_str: str) -> List[Dict[str, Any]]:
+        """Get all reservations for a specific date"""
+        if not self.reservations_worksheet:
+            logging.warning("Reservations worksheet not available")
+            return []
+        
+        try:
+            # Get all records
+            records = self.reservations_worksheet.get_all_records()
+            
+            # Filter by date
+            date_reservations = []
+            for record in records:
+                if record.get('Date') == date_str:
+                    # Convert to our reservation format
+                    reservation = {
+                        'reservation_id': record.get('Reservation ID', ''),
+                        'date': record.get('Date', ''),
+                        'start_time': record.get('Start Time', ''),
+                        'end_time': record.get('End Time', ''),
+                        'service': record.get('Service', ''),
+                        'staff': record.get('Staff', ''),
+                        'client_name': record.get('Client Name', ''),
+                        'user_id': record.get('User ID', ''),
+                        'duration': record.get('Duration', ''),
+                        'price': record.get('Price', '')
+                    }
+                    date_reservations.append(reservation)
+            
+            return date_reservations
+            
+        except Exception as e:
+            logging.error(f"Error getting reservations for date {date_str}: {e}")
+            return []
+    
+    def get_user_id_for_reservation(self, reservation_id: str) -> Optional[str]:
+        """Get user ID for a specific reservation"""
+        if not self.reservations_worksheet:
+            logging.warning("Reservations worksheet not available")
+            return None
+        
+        try:
+            # Get all records
+            records = self.reservations_worksheet.get_all_records()
+            
+            # Find the reservation
+            for record in records:
+                if record.get('Reservation ID') == reservation_id:
+                    return record.get('User ID', '')
+            
+            logging.warning(f"Reservation {reservation_id} not found in sheets")
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting user ID for reservation {reservation_id}: {e}")
+            return None
