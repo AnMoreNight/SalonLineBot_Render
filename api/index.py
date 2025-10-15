@@ -83,6 +83,16 @@ def handle_message(event: MessageEvent):
     except Exception as e:
         logging.warning(f"Could not fetch user profile for {user_id}: {e}")
         user_name = "Unknown"
+    
+    # Send Slack notification for user login (first message from user)
+    try:
+        from api.slack_notifier import send_user_login_notification
+        # Only send login notification for the first message (simple heuristic)
+        # In a real system, you might want to track user sessions more precisely
+        if message_text and not message_text.startswith(('予約', 'キャンセル', '変更', '修正')):
+            send_user_login_notification(user_id, user_name)
+    except Exception as e:
+        logging.error(f"Failed to send user login notification: {e}")
 
     try:
         # Special ping-pong test

@@ -603,6 +603,13 @@ class ReservationFlow:
                 import traceback
                 traceback.print_exc()
             
+            # Send Slack notification for reservation confirmation
+            try:
+                from api.slack_notifier import send_reservation_confirmation_notification
+                send_reservation_confirmation_notification(reservation_data, client_name)
+            except Exception as e:
+                logging.error(f"Failed to send reservation confirmation notification: {e}")
+            
             # Keep reservation data in user state for logging in index.py
             # The user state will be cleared after logging in index.py
             self.user_states[user_id]["data"] = reservation_data
@@ -878,6 +885,14 @@ class ReservationFlow:
             
             if not calendar_success:
                 logging.warning(f"Failed to remove reservation {reservation_id} from Google Calendar")
+            
+            # Send Slack notification for reservation cancellation
+            try:
+                from api.slack_notifier import send_reservation_cancellation_notification
+                client_name = self._get_line_display_name(user_id)
+                send_reservation_cancellation_notification(reservation, client_name)
+            except Exception as e:
+                logging.error(f"Failed to send reservation cancellation notification: {e}")
             
             # Clear user state
             del self.user_states[user_id]
@@ -1470,6 +1485,21 @@ class ReservationFlow:
         if not sheets_success:
             logging.warning(f"Failed to update sheets for reservation {reservation['reservation_id']}")
         
+        # Send Slack notification for reservation modification
+        try:
+            from api.slack_notifier import send_reservation_modification_notification
+            # Create old and new reservation data for comparison
+            old_reservation = reservation.copy()
+            new_reservation = reservation.copy()
+            new_reservation.update({
+                'date': selected_date,
+                'start_time': start_time,
+                'end_time': end_time
+            })
+            send_reservation_modification_notification(old_reservation, new_reservation, self._get_line_display_name(user_id))
+        except Exception as e:
+            logging.error(f"Failed to send reservation modification notification: {e}")
+        
         # Clear user state
         del self.user_states[user_id]
         
@@ -1592,6 +1622,21 @@ class ReservationFlow:
         if not sheets_success:
             logging.warning(f"Failed to update sheets for reservation {reservation['reservation_id']}")
         
+        # Send Slack notification for reservation modification
+        try:
+            from api.slack_notifier import send_reservation_modification_notification
+            # Create old and new reservation data for comparison
+            old_reservation = reservation.copy()
+            new_reservation = reservation.copy()
+            new_reservation.update({
+                'service': new_service,
+                'duration': new_duration,
+                'end_time': new_end_time
+            })
+            send_reservation_modification_notification(old_reservation, new_reservation, self._get_line_display_name(user_id))
+        except Exception as e:
+            logging.error(f"Failed to send reservation modification notification: {e}")
+
         # Update local reservation snapshot for confirmation message
         reservation["service"] = new_service
         reservation["duration"] = new_duration
@@ -1671,6 +1716,19 @@ class ReservationFlow:
         
         if not sheets_success:
             return "申し訳ございません。担当者の更新に失敗しました。スタッフまでお問い合わせください。"
+        
+        # Send Slack notification for reservation modification
+        try:
+            from api.slack_notifier import send_reservation_modification_notification
+            # Create old and new reservation data for comparison
+            old_reservation = reservation.copy()
+            new_reservation = reservation.copy()
+            new_reservation.update({
+                'staff': new_staff
+            })
+            send_reservation_modification_notification(old_reservation, new_reservation, self._get_line_display_name(user_id))
+        except Exception as e:
+            logging.error(f"Failed to send reservation modification notification: {e}")
         
         # Clear user state
         del self.user_states[user_id]
