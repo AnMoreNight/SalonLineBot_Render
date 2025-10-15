@@ -81,12 +81,19 @@ class ReservationFlow:
         except (ValueError, IndexError):
             return start_time
     
-    def _get_available_slots(self, selected_date: str = None) -> List[Dict[str, Any]]:
-        """Get available time slots from Google Calendar for a specific date"""
+    def _get_available_slots(self, selected_date: str = None, staff_name: str = None) -> List[Dict[str, Any]]:
+        """Get available time slots from Google Calendar for a specific date and staff member"""
         if selected_date is None:
             # If no date specified, get slots for today
             selected_date = datetime.now().strftime("%Y-%m-%d")
         
+        # If staff_name is provided, use staff-specific availability
+        if staff_name:
+            # Get staff-specific available slots
+            staff_slots = self.google_calendar.get_available_slots_for_modification(selected_date, None, staff_name)
+            return staff_slots
+        
+        # Fallback to general availability (for cases where staff is not selected yet)
         # Convert string date to datetime objects for the specific day
         start_date = datetime.strptime(selected_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=1)  # Next day at 00:00
@@ -333,7 +340,9 @@ class ReservationFlow:
         self.user_states[user_id]["step"] = "time_selection"
         
         # Get available time periods for selected date from Google Calendar
-        available_slots = self._get_available_slots(selected_date)
+        # Use staff-specific availability if staff is already selected
+        staff_name = self.user_states[user_id]["data"].get("staff")
+        available_slots = self._get_available_slots(selected_date, staff_name)
         available_periods = [slot for slot in available_slots if slot["available"]]
         
         if not available_periods:
@@ -388,7 +397,8 @@ class ReservationFlow:
             return self._create_calendar_template()
         
         selected_date = self.user_states[user_id]["data"]["date"]
-        available_slots = self._get_available_slots(selected_date)
+        staff_name = self.user_states[user_id]["data"].get("staff")
+        available_slots = self._get_available_slots(selected_date, staff_name)
         available_periods = [slot for slot in available_slots if slot["available"]]
 
         # Parse start and end times from user input
@@ -417,7 +427,7 @@ class ReservationFlow:
             self.user_states[user_id]["step"] = "time_selection"
             
             # Get available periods again for display
-            available_slots = self._get_available_slots(selected_date)
+            available_slots = self._get_available_slots(selected_date, staff_name)
             available_periods = [slot for slot in available_slots if slot["available"]]
             
             period_strings = []
@@ -488,7 +498,7 @@ class ReservationFlow:
             self.user_states[user_id]["step"] = "time_selection"
             
             # Get available periods again for display
-            available_slots = self._get_available_slots(selected_date)
+            available_slots = self._get_available_slots(selected_date, staff_name)
             available_periods = [slot for slot in available_slots if slot["available"]]
             
             period_strings = []
@@ -1127,32 +1137,8 @@ class ReservationFlow:
             logging.info("Selected staff modification (3)")
             return self._handle_staff_modification(user_id, message)
         
-        # Check for specific modification types
-        time_change_keywords = self.navigation_keywords.get("time_change", [])
-        service_change_keywords = self.navigation_keywords.get("service_change", [])
-        staff_change_keywords = self.navigation_keywords.get("staff_change", [])
-        
-        # Normalize message for better matching
-        message_normalized = message.strip().lower()
-        
-        # Check keywords with case-insensitive matching
-        if any(keyword.lower() in message_normalized for keyword in time_change_keywords):
-            logging.info(f"Selected time modification via keyword: '{message}'")
-            return self._handle_time_modification(user_id, message)
-        elif any(keyword.lower() in message_normalized for keyword in service_change_keywords):
-            logging.info(f"Selected service modification via keyword: '{message}'")
-            return self._handle_service_modification(user_id, message)
-        elif any(keyword.lower() in message_normalized for keyword in staff_change_keywords):
-            logging.info(f"Selected staff modification via keyword: '{message}'")
-            return self._handle_staff_modification(user_id, message)
-        else:
-            return """何を変更しますか？以下のキーワードでお答えください：
-
-1️⃣ 時間変更したい
-2️⃣ サービス変更したい  
-3️⃣ 担当者変更したい
-
-または、番号（1-3）で選択してください。"""
+        # Only numeric selection is supported
+        return "申し訳ございませんが、正しい番号を入力してください。\n\n1️⃣ 日時変更したい\n2️⃣ サービス変更したい\n3️⃣ 担当者変更したい"
     
     def _handle_time_modification(self, user_id: str, message: str) -> str:
         """Handle time modification - ask if user wants to change date"""
@@ -1252,9 +1238,11 @@ class ReservationFlow:
         logging.info(f"  Service: {reservation.get('service', 'Unknown')}")
         
         # Get available slots for the date (excluding current reservation to free up that time)
+        # Only consider events for the current staff member
         available_slots = self.google_calendar.get_available_slots_for_modification(
             date, 
-            reservation["reservation_id"]
+            reservation["reservation_id"],
+            reservation["staff"]  # Pass current staff to filter events
         )
         
         if not available_slots:
@@ -1525,23 +1513,59 @@ class ReservationFlow:
         new_duration = new_service_info["duration"]
         new_price = new_service_info["price"]
         
-        # Check if the new service can fit in any available slot on the date (ignoring current reservation)
-        available_slots = self.google_calendar.get_available_slots_for_service(
-            reservation["date"], 
+        # Check if changing to the new service would cause time overlaps for the current staff
+        is_available, new_end_time, conflict_info = self.google_calendar.check_service_change_overlap(
+            reservation["date"],
+            reservation["start_time"],
             new_service,
+            reservation["staff"],
             reservation["reservation_id"]
         )
         
-        if not available_slots:
-            return f"""申し訳ございませんが、{reservation['date']}には{new_service}（{new_duration}分）が可能な時間がありません。
+        if not is_available:
+            # Build detailed conflict message
+            conflict_message = f"""申し訳ございませんが、{new_service}（{new_duration}分）に変更すると、{reservation['staff']}の他の予約と時間が重複してしまいます。
 
-別の日付または別のサービスをご検討いただくか、スタッフまでお問い合わせください。"""
+📅 予約日時：{reservation['date']} {reservation['start_time']}~{new_end_time}
+👨‍💼 担当者：{reservation['staff']}
+⏱️ 新しい所要時間：{new_duration}分
+
+🚫 時間が重複する予約："""
+            
+            if conflict_info and conflict_info.get('conflicts'):
+                for conflict in conflict_info['conflicts']:
+                    conflict_message += f"\n• {conflict['client']}様: {conflict['start_time']}~{conflict['end_time']}"
+            
+            conflict_message += f"""
+
+💡 **解決方法：**
+1️⃣ 時間を変更してからサービスを変更
+2️⃣ 別のサービスを選択
+3️⃣ 別の日付に変更
+
+どの方法をご希望ですか？"""
+            
+            return conflict_message
         
         # Compute new end time based on new service duration for Sheets/confirmation
         try:
             from datetime import datetime, timedelta
             start_dt_for_service = datetime.strptime(reservation["start_time"], "%H:%M")
             new_end_time = (start_dt_for_service + timedelta(minutes=new_duration)).strftime("%H:%M")
+            
+            # Check if new end time exceeds business hours (18:00)
+            new_end_dt = datetime.strptime(new_end_time, "%H:%M")
+            business_end_dt = datetime.strptime("18:00", "%H:%M")
+            
+            if new_end_dt > business_end_dt:
+                return f"""申し訳ございませんが、{new_service}（{new_duration}分）は営業時間外になってしまいます。
+
+📅 予約日時：{reservation['date']} {reservation['start_time']}
+⏰ 新しい終了時刻：{new_end_time}
+🕕 営業終了時刻：18:00
+
+より短い時間のサービスをご選択いただくか、別の時間帯をご検討ください。"""
+                
         except Exception:
             new_end_time = reservation.get("end_time", "")
 
@@ -1612,6 +1636,22 @@ class ReservationFlow:
         if not new_staff:
             available_staff = "、".join(self.staff_members.keys())
             return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff}\n\n上記から選択してください。"
+        
+        # Check if the new staff is available for the current reservation time
+        is_available = self.google_calendar.check_staff_availability_for_time(
+            reservation["date"],
+            reservation["start_time"],
+            reservation["end_time"],
+            new_staff,
+            reservation["reservation_id"]
+        )
+        
+        if not is_available:
+            return f"""申し訳ございませんが、{new_staff}は{reservation['date']} {reservation['start_time']}~{reservation['end_time']}の時間帯に他の予約が入っています。
+
+別の担当者を選択するか、時間を変更してから担当者を変更してください。
+
+💡 **時間変更も可能です** - 「日時変更したい」を選択してください。"""
         
         # Update Google Calendar summary to reflect new staff
         calendar_success = self.google_calendar.modify_reservation_time(

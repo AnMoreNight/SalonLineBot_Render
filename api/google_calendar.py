@@ -160,6 +160,9 @@ class GoogleCalendarHelper:
 予約元: LINE Bot
             """.strip()
             
+            # Get staff color ID
+            staff_color_id = self._get_staff_color_id(staff)
+            
             # Create event
             event = {
                 'summary': event_title,
@@ -173,6 +176,10 @@ class GoogleCalendarHelper:
                     'timeZone': self.timezone,
                 },
             }
+            
+            # Add color if staff color is available
+            if staff_color_id:
+                event['colorId'] = staff_color_id
             
             # Add staff as attendee if not "未指定"
             if staff != "未指定":
@@ -359,6 +366,12 @@ class GoogleCalendarHelper:
                         event['summary'] = f"[予約] {updated_service} - {client} ({updated_staff})"
                 except Exception:
                     pass
+            
+            # Update color if staff is being changed
+            if new_staff:
+                new_staff_color_id = self._get_staff_color_id(new_staff)
+                if new_staff_color_id:
+                    event['colorId'] = new_staff_color_id
 
             updated = self.service.events().update(
                 calendarId=self.calendar_id,
@@ -551,10 +564,10 @@ class GoogleCalendarHelper:
             print(f"Failed to get events for date {date_str}: {e}")
             return []
     
-    def get_available_slots_for_modification(self, date_str: str, exclude_reservation_id: str = None) -> List[Dict]:
+    def get_available_slots_for_modification(self, date_str: str, exclude_reservation_id: str = None, staff_name: str = None) -> List[Dict]:
         """
         Get available slots for modification - INCLUDES the user's current reservation time,
-        EXCLUDES other reservations
+        EXCLUDES other reservations for the same staff member
         """
         if not self.service or not self.calendar_id:
             return self._generate_fallback_slots(
@@ -565,7 +578,12 @@ class GoogleCalendarHelper:
         try:
             # Get all events for the date
             all_events = self.get_events_for_date(date_str)
-            print(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}")
+            print(f"[Modification] Date: {date_str}, Total events: {len(all_events)}, Current Reservation ID: {exclude_reservation_id}, Staff: {staff_name}")
+            
+            # Filter events by staff if staff_name is provided
+            if staff_name:
+                all_events = self._filter_events_by_staff(all_events, staff_name)
+                print(f"[Modification] Filtered to {len(all_events)} events for staff: {staff_name}")
             
             current_reservation = None
             other_events = []
@@ -624,12 +642,12 @@ class GoogleCalendarHelper:
             print(f"Failed to get available slots for modification: {e}")
             return []
     
-    def get_available_slots_for_service(self, date_str: str, service_name: str, exclude_reservation_id: str = None) -> List[Dict]:
+    def get_available_slots_for_service(self, date_str: str, service_name: str, exclude_reservation_id: str = None, staff_name: str = None) -> List[Dict]:
         """Get available slots considering service duration requirements"""
         service_duration = self._get_service_duration_minutes(service_name)
         
         # Get all available periods
-        all_slots = self.get_available_slots_for_modification(date_str, exclude_reservation_id)
+        all_slots = self.get_available_slots_for_modification(date_str, exclude_reservation_id, staff_name)
         
         
         # Filter slots that can accommodate the service duration
@@ -723,6 +741,181 @@ class GoogleCalendarHelper:
         if email_env:
             return os.getenv(email_env)
         return None
+    
+    def _get_staff_color_id(self, staff_name: str) -> Optional[str]:
+        """Get staff color ID from mapping"""
+        staff_data = self.staff_data.get(staff_name, {})
+        return staff_data.get("color_id")
+    
+    def _filter_events_by_staff(self, events: List[Dict], staff_name: str) -> List[Dict]:
+        """Filter events to only include those for a specific staff member"""
+        if not events:
+            return []
+        
+        filtered_events = []
+        for event in events:
+            summary = event.get('summary', '') or ''
+            # Expected format: "[予約] SERVICE - CLIENT (STAFF)"
+            try:
+                import re
+                m = re.search(r"^\[予約\] (.+) - (.+) \((.+)\)$", summary)
+                if m:
+                    event_staff = m.group(3)
+                    if event_staff == staff_name:
+                        filtered_events.append(event)
+            except Exception:
+                # If parsing fails, skip this event
+                continue
+        
+        return filtered_events
+    
+    def check_staff_availability_for_time(self, date_str: str, start_time: str, end_time: str, staff_name: str, exclude_reservation_id: str = None) -> bool:
+        """Check if a staff member is available for a specific time period"""
+        try:
+            # Get all events for the date
+            all_events = self.get_events_for_date(date_str)
+            
+            # Filter events by staff
+            staff_events = self._filter_events_by_staff(all_events, staff_name)
+            
+            # Parse the requested time period
+            from datetime import datetime
+            start_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            end_datetime = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
+            
+            # Check for overlaps with existing appointments
+            for event in staff_events:
+                # Skip the reservation being modified
+                if exclude_reservation_id:
+                    description = event.get('description', '')
+                    if f"予約ID: {exclude_reservation_id}" in description:
+                        continue
+                
+                event_start_str = event.get('start', {}).get('dateTime', '')
+                event_end_str = event.get('end', {}).get('dateTime', '')
+                
+                if event_start_str and event_end_str:
+                    # Parse event times
+                    event_start = datetime.fromisoformat(event_start_str.replace('Z', '+00:00'))
+                    event_end = datetime.fromisoformat(event_end_str.replace('Z', '+00:00'))
+                    
+                    # Convert to local time for comparison
+                    import pytz
+                    tz = pytz.timezone(self.timezone)
+                    event_start = event_start.astimezone(tz).replace(tzinfo=None)
+                    event_end = event_end.astimezone(tz).replace(tzinfo=None)
+                    
+                    # Check for overlap
+                    if (start_datetime < event_end and end_datetime > event_start):
+                        return False  # Time conflict found
+            
+            return True  # No conflicts found
+            
+        except Exception as e:
+            print(f"Error checking staff availability: {e}")
+            return False
+    
+    def check_service_change_overlap(self, date_str: str, start_time: str, new_service: str, staff_name: str, exclude_reservation_id: str = None) -> tuple:
+        """
+        Check if changing to a new service would cause time overlaps for the staff member.
+        Returns (is_available, new_end_time, conflict_info)
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Get service duration
+            service_duration = self._get_service_duration_minutes(new_service)
+            
+            # Calculate new end time based on start time and service duration
+            start_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            new_end_datetime = start_datetime + timedelta(minutes=service_duration)
+            new_end_time = new_end_datetime.strftime("%H:%M")
+            
+            # Check if the new time period would overlap with other appointments
+            is_available = self.check_staff_availability_for_time(
+                date_str, start_time, new_end_time, staff_name, exclude_reservation_id
+            )
+            
+            # Get conflict information if there's an overlap
+            conflict_info = None
+            if not is_available:
+                conflict_info = self._get_conflict_details(
+                    date_str, start_time, new_end_time, staff_name, exclude_reservation_id
+                )
+            
+            return is_available, new_end_time, conflict_info
+            
+        except Exception as e:
+            print(f"Error checking service change overlap: {e}")
+            return False, start_time, None
+    
+    def _get_conflict_details(self, date_str: str, start_time: str, end_time: str, staff_name: str, exclude_reservation_id: str = None) -> dict:
+        """Get details about conflicting appointments"""
+        try:
+            from datetime import datetime
+            
+            # Get all events for the date
+            all_events = self.get_events_for_date(date_str)
+            
+            # Filter events by staff
+            staff_events = self._filter_events_by_staff(all_events, staff_name)
+            
+            # Parse the requested time period
+            start_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            end_datetime = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
+            
+            # Find conflicting appointments
+            conflicts = []
+            for event in staff_events:
+                # Skip the reservation being modified
+                if exclude_reservation_id:
+                    description = event.get('description', '')
+                    if f"予約ID: {exclude_reservation_id}" in description:
+                        continue
+                
+                event_start_str = event.get('start', {}).get('dateTime', '')
+                event_end_str = event.get('end', {}).get('dateTime', '')
+                
+                if event_start_str and event_end_str:
+                    # Parse event times
+                    event_start = datetime.fromisoformat(event_start_str.replace('Z', '+00:00'))
+                    event_end = datetime.fromisoformat(event_end_str.replace('Z', '+00:00'))
+                    
+                    # Convert to local time for comparison
+                    import pytz
+                    tz = pytz.timezone(self.timezone)
+                    event_start = event_start.astimezone(tz).replace(tzinfo=None)
+                    event_end = event_end.astimezone(tz).replace(tzinfo=None)
+                    
+                    # Check for overlap
+                    if (start_datetime < event_end and end_datetime > event_start):
+                        # Extract client name from summary
+                        summary = event.get('summary', '')
+                        client_name = "Unknown"
+                        try:
+                            import re
+                            m = re.search(r"^\[予約\] (.+) - (.+) \((.+)\)$", summary)
+                            if m:
+                                client_name = m.group(2)
+                        except Exception:
+                            pass
+                        
+                        conflicts.append({
+                            'client': client_name,
+                            'start_time': event_start.strftime("%H:%M"),
+                            'end_time': event_end.strftime("%H:%M"),
+                            'summary': summary
+                        })
+            
+            return {
+                'conflicts': conflicts,
+                'staff_name': staff_name,
+                'requested_time': f"{start_time}~{end_time}"
+            }
+            
+        except Exception as e:
+            print(f"Error getting conflict details: {e}")
+            return None
 
 
 if __name__ == "__main__":
