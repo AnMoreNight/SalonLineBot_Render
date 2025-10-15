@@ -1,15 +1,39 @@
-# Slack Notifications Setup Guide
+# Notification System Setup Guide
 
 ## Overview
 
-The salon booking system now includes comprehensive Slack notifications for all user actions:
+The salon booking system now includes comprehensive notifications for all user actions. You can choose between Slack, LINE, or both notification methods:
+
+**Supported Notification Methods:**
+- 📱 **LINE Notifications**: Send notifications directly to LINE chat
+- 💬 **Slack Notifications**: Send notifications to Slack channels
+- 🔄 **Both**: Send notifications to both LINE and Slack simultaneously
+
+**Notification Types:**
 
 - 🔐 **User Login**: When users interact with the bot
 - 📅 **Reservation Confirmation**: When new reservations are created
 - ✏️ **Reservation Modification**: When reservations are changed (time, service, staff)
 - 🚫 **Reservation Cancellation**: When reservations are cancelled
 
-## Setup Instructions
+## Quick Setup
+
+### Choose Your Notification Method
+
+Set the `NOTIFICATION_METHOD` environment variable:
+
+```bash
+# For Slack notifications only
+NOTIFICATION_METHOD=slack
+
+# For LINE notifications only  
+NOTIFICATION_METHOD=line
+
+# For both Slack and LINE notifications
+NOTIFICATION_METHOD=both
+```
+
+## Slack Setup Instructions
 
 ### 1. Create a Slack App
 
@@ -28,12 +52,34 @@ The salon booking system now includes comprehensive Slack notifications for all 
 5. Click "Allow"
 6. Copy the webhook URL (starts with `https://hooks.slack.com/services/...`)
 
-### 3. Configure Environment Variable
+### 3. Configure Environment Variables
 
 Add the webhook URL to your `.env` file:
 
 ```bash
+# Notification method (choose one)
+NOTIFICATION_METHOD=slack
+
+# Slack webhook URL
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+## LINE Setup Instructions
+
+For LINE notifications, see the detailed guide: **LINE_NOTIFICATIONS_SETUP.md**
+
+Quick setup:
+1. Get LINE Channel Access Token from LINE Developers Console
+2. Get LINE User ID of notification recipient
+3. Set environment variables:
+
+```bash
+# Notification method
+NOTIFICATION_METHOD=line
+
+# LINE configuration
+LINE_CHANNEL_ACCESS_TOKEN=your_channel_access_token
+LINE_NOTIFICATION_USER_ID=your_user_id
 ```
 
 ### 4. Deploy and Test
@@ -81,15 +127,24 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 3. **Check Logs**: Look for Slack-related error messages in application logs
 4. **Test Manually**: Use the test script to verify functionality
 
-### Test Script
+### Test Scripts
 
-Run the test script to verify Slack integration:
-
+**Test Slack notifications:**
 ```bash
 python api/slack_notifier.py
 ```
 
-This will send a test notification to your configured Slack channel.
+**Test LINE notifications:**
+```bash
+python test_line_notifications.py
+```
+
+**Test unified notification system:**
+```bash
+python api/notification_manager.py
+```
+
+These scripts will send test notifications to verify your configuration.
 
 ## Security Notes
 
@@ -100,12 +155,24 @@ This will send a test notification to your configured Slack channel.
 
 ## Customization
 
-You can customize notifications by modifying `api/slack_notifier.py`:
+You can customize notifications by modifying the notifier files:
 
+**For Slack notifications:** `api/slack_notifier.py`
 - Change message formatting
 - Add additional notification types
 - Modify colors and emojis
 - Add custom fields or attachments
+
+**For LINE notifications:** `api/line_notifier.py`
+- Change message formatting
+- Add additional notification types
+- Modify emojis and structure
+- Add custom message types
+
+**For unified management:** `api/notification_manager.py`
+- Add new notification methods
+- Modify notification routing logic
+- Add notification filtering or conditions
 
 ## Support
 
