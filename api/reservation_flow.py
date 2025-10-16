@@ -388,19 +388,24 @@ class ReservationFlow:
         """
         try:
             from datetime import datetime, timedelta
+            import pytz
             
-            # Parse the requested date and time
-            requested_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            # Set Tokyo timezone
+            tokyo_tz = pytz.timezone('Asia/Tokyo')
             
-            # Get current time
-            current_datetime = datetime.now()
+            # Parse the requested date and time and set to Tokyo timezone
+            requested_datetime_naive = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            requested_datetime = tokyo_tz.localize(requested_datetime_naive)
+            
+            # Get current time in Tokyo timezone
+            current_datetime = datetime.now(tokyo_tz)
             
             # Calculate time difference
             time_difference = requested_datetime - current_datetime
             hours_until_booking = time_difference.total_seconds() / 3600
             
-            # Check if it's at least 2 hours in advance
-            if hours_until_booking < 2.0:
+            # Check if it's at least 2 hours in advance (with small tolerance for precision)
+            if hours_until_booking < 1.99:
                 # Calculate how much time is needed
                 needed_hours = 2 - hours_until_booking
                 needed_minutes = int(needed_hours * 60)
@@ -420,8 +425,8 @@ class ReservationFlow:
                 
                 error_message = f"""申し訳ございませんが、ご予約は来店の2時間前までにお取りいただけます。
 
-📅 ご希望の日時：{date_str} {start_time}
-⏰ 現在時刻：{current_datetime.strftime('%Y-%m-%d %H:%M')}
+📅 ご希望の日時：{date_str} {start_time} (東京時間)
+⏰ 現在時刻：{current_datetime.strftime('%Y-%m-%d %H:%M')} (東京時間)
 ⏱️ 必要時間：あと{time_message}お待ちください
 
 2時間以上先の時間帯をご選択ください。"""
