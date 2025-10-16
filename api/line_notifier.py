@@ -272,11 +272,11 @@ class LineNotifier:
             return 0
     
     def _get_calendar_url(self) -> str:
-        """Get the Google Calendar URL"""
+        """Get the Google Calendar URL (short version)"""
         try:
             from api.google_calendar import GoogleCalendarHelper
             calendar_helper = GoogleCalendarHelper()
-            return calendar_helper.get_calendar_url()
+            return calendar_helper.get_short_calendar_url()
         except Exception as e:
             logging.error(f"Error getting calendar URL: {e}")
             return "https://calendar.google.com/calendar"

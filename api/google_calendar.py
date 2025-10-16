@@ -561,6 +561,14 @@ class GoogleCalendarHelper:
         # Simple calendar URL
         return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
     
+    def get_short_calendar_url(self) -> str:
+        """Get a short calendar URL for notifications"""
+        if not self.calendar_id:
+            return "https://calendar.google.com/calendar"
+        
+        # Short calendar URL with minimal parameters
+        return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}&ctz=Asia%2FTokyo"
+    
     def get_events_for_date(self, date_str: str) -> List[Dict]:
         """Get all events for a specific date (timezone-aware)"""
         if not self.service or not self.calendar_id:
