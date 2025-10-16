@@ -285,6 +285,13 @@ class GoogleSheetsLogger:
             # Try to get existing users worksheet
             try:
                 users_worksheet = spreadsheet.worksheet("Users")
+                # Check if headers are set up correctly
+                existing_records = users_worksheet.get_all_records()
+                if not existing_records or not self._has_correct_headers(existing_records):
+                    logging.info("Users worksheet exists but headers need setup")
+                    # Clear the worksheet and set up headers properly
+                    users_worksheet.clear()
+                    self._setup_users_headers(users_worksheet)
             except gspread.WorksheetNotFound:
                 # Create new users worksheet
                 users_worksheet = spreadsheet.add_worksheet(
@@ -302,6 +309,22 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Failed to get users worksheet: {e}")
             return None
+    
+    def _has_correct_headers(self, records: list) -> bool:
+        """Check if the Users worksheet has the correct headers"""
+        if not records:
+            return False
+        
+        # Get the first record (which should be the headers)
+        first_record = records[0]
+        expected_headers = ["Timestamp", "User ID", "Display Name", "Phone Number", "Status", "Notes"]
+        
+        # Check if all expected headers are present
+        for header in expected_headers:
+            if header not in first_record:
+                return False
+        
+        return True
     
     def _setup_users_headers(self, worksheet):
         """Setup headers for the users worksheet"""
@@ -600,11 +623,19 @@ class GoogleSheetsLogger:
         """Log new user data to the Users sheet"""
         if not self.users_worksheet:
             logging.warning("Users worksheet not available. Cannot log user data.")
-            return False
+            # Try to get the worksheet again
+            self.users_worksheet = self._get_users_worksheet()
+            if not self.users_worksheet:
+                logging.error("Failed to get Users worksheet after retry")
+                return False
         
         try:
+            logging.info(f"Attempting to log new user: {display_name} ({user_id})")
+            
             # Check if user already exists
             existing_records = self.users_worksheet.get_all_records()
+            logging.info(f"Found {len(existing_records)} existing records in Users sheet")
+            
             for record in existing_records:
                 if record.get('User ID') == user_id:
                     logging.info(f"User {user_id} already exists in Users sheet")
@@ -620,6 +651,8 @@ class GoogleSheetsLogger:
                 "Active",
                 "Added via LINE Bot"
             ]
+            
+            logging.info(f"Adding user data: {user_data}")
             
             # Add user to sheet
             self.users_worksheet.append_row(user_data)
