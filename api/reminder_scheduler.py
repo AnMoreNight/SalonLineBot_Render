@@ -24,7 +24,7 @@ class ReminderScheduler:
     def _setup_schedule(self):
         """Setup the daily reminder schedule"""
         # Schedule reminders to run at 9:00 AM daily
-        schedule.every().day.at("09:00").do(self._run_reminders)
+        schedule.every().day.at("09:40").do(self._run_reminders)
         
         logging.info("Reminder schedule set: Daily at 9:00 AM")
     

@@ -520,6 +520,38 @@ class ReservationFlow:
 💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
+        # Check for user time conflict (user can't have multiple reservations at the same time)
+        user_time_conflict = self.google_calendar.check_user_time_conflict(
+            selected_date, start_time, end_time, user_id
+        )
+        
+        if user_time_conflict:
+            # Return to time selection with error message
+            self.user_states[user_id]["step"] = "time_selection"
+            
+            # Get available periods again for display
+            available_slots = self._get_available_slots(selected_date, staff_name)
+            available_periods = [slot for slot in available_slots if slot["available"]]
+            
+            period_strings = []
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                period_strings.append(f"・{period_start}~{period_end}")
+            
+            return f"""申し訳ございませんが、{selected_date} {start_time}~{end_time}の時間帯に既に他のご予約が入っています。
+
+お客様は同じ時間帯に複数のご予約をお取りいただけません。
+
+{selected_date}の空いている時間帯は以下の通りです：
+
+{chr(10).join(period_strings)}
+
+別の時間を選択してください。
+
+💡 **他の日を選択したい場合は「日付変更」とお送りください**
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
+        
         # Store both start and end times
         self.user_states[user_id]["data"]["start_time"] = start_time
         self.user_states[user_id]["data"]["end_time"] = end_time
@@ -1460,6 +1492,18 @@ class ReservationFlow:
             logging.error(f"Error calculating duration: {e}")
             return "時間の形式が正しくありません。\n例）13:00~14:00"
         
+        # Check for user time conflict (user can't have multiple reservations at the same time)
+        user_time_conflict = self.google_calendar.check_user_time_conflict(
+            selected_date, start_time, end_time, user_id, reservation["reservation_id"]
+        )
+        
+        if user_time_conflict:
+            return f"""申し訳ございませんが、{selected_date} {start_time}~{end_time}の時間帯に既に他のご予約が入っています。
+
+お客様は同じ時間帯に複数のご予約をお取りいただけません。
+
+別の時間を選択してください。"""
+        
         # Update Google Calendar with the selected date
         calendar_success = self.google_calendar.modify_reservation_time(
             reservation["reservation_id"], 
@@ -1599,6 +1643,18 @@ class ReservationFlow:
         except Exception:
             new_end_time = reservation.get("end_time", "")
 
+        # Check for user time conflict (user can't have multiple reservations at the same time)
+        user_time_conflict = self.google_calendar.check_user_time_conflict(
+            reservation["date"], reservation["start_time"], new_end_time, user_id, reservation["reservation_id"]
+        )
+        
+        if user_time_conflict:
+            return f"""申し訳ございませんが、{reservation['date']} {reservation['start_time']}~{new_end_time}の時間帯に既に他のご予約が入っています。
+
+お客様は同じ時間帯に複数のご予約をお取りいただけません。
+
+別の時間を選択してください。"""
+        
         # Update Google Calendar: change service and adjust duration on the exact event by ID
         calendar_success = self.google_calendar.modify_reservation_time(
             reservation["reservation_id"],
@@ -1697,6 +1753,18 @@ class ReservationFlow:
 別の担当者を選択するか、時間を変更してから担当者を変更してください。
 
 💡 **時間変更も可能です** - 「日時変更したい」を選択してください。"""
+        
+        # Check for user time conflict (user can't have multiple reservations at the same time)
+        user_time_conflict = self.google_calendar.check_user_time_conflict(
+            reservation["date"], reservation["start_time"], reservation["end_time"], user_id, reservation["reservation_id"]
+        )
+        
+        if user_time_conflict:
+            return f"""申し訳ございませんが、{reservation['date']} {reservation['start_time']}~{reservation['end_time']}の時間帯に既に他のご予約が入っています。
+
+お客様は同じ時間帯に複数のご予約をお取りいただけません。
+
+別の時間を選択してください。"""
         
         # Update Google Calendar summary to reflect new staff
         calendar_success = self.google_calendar.modify_reservation_time(

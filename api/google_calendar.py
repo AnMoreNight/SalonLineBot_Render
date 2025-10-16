@@ -849,6 +849,72 @@ class GoogleCalendarHelper:
             print(f"Error checking service change overlap: {e}")
             return False, start_time, None
     
+    def check_user_time_conflict(self, date_str: str, start_time: str, end_time: str, user_id: str, exclude_reservation_id: str = None) -> bool:
+        """
+        Check if a user already has a reservation at the same time.
+        Returns True if there's a conflict (user already has a reservation at this time).
+        """
+        try:
+            from datetime import datetime
+            
+            # Get all events for the date
+            all_events = self.get_events_for_date(date_str)
+            
+            # Parse the requested time period
+            start_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            end_datetime = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
+            
+            # Check for overlaps with user's existing reservations
+            for event in all_events:
+                # Skip the reservation being modified
+                if exclude_reservation_id:
+                    description = event.get('description', '')
+                    if f"予約ID: {exclude_reservation_id}" in description:
+                        continue
+                
+                # Check if this event belongs to the same user
+                if self._is_user_reservation(event, user_id):
+                    event_start_str = event.get('start', {}).get('dateTime', '')
+                    event_end_str = event.get('end', {}).get('dateTime', '')
+                    
+                    if event_start_str and event_end_str:
+                        # Parse event times
+                        event_start = datetime.fromisoformat(event_start_str.replace('Z', '+00:00'))
+                        event_end = datetime.fromisoformat(event_end_str.replace('Z', '+00:00'))
+                        
+                        # Convert to local time for comparison
+                        import pytz
+                        tz = pytz.timezone(self.timezone)
+                        event_start = event_start.astimezone(tz).replace(tzinfo=None)
+                        event_end = event_end.astimezone(tz).replace(tzinfo=None)
+                        
+                        # Check for overlap
+                        if (start_datetime < event_end and end_datetime > event_start):
+                            return True  # Time conflict found
+            
+            return False  # No conflicts found
+            
+        except Exception as e:
+            print(f"Error checking user time conflict: {e}")
+            return True  # Assume conflict if error occurs (safer approach)
+    
+    def _is_user_reservation(self, event: Dict, user_id: str) -> bool:
+        """Check if an event belongs to a specific user"""
+        try:
+            # Try to get user ID from event description
+            description = event.get('description', '')
+            if 'User ID:' in description:
+                event_user_id = description.split('User ID:')[1].split('\n')[0].strip()
+                return event_user_id == user_id
+            
+            # If no user ID in description, we can't determine ownership
+            # This might happen for older reservations
+            return False
+            
+        except Exception as e:
+            print(f"Error checking if event belongs to user: {e}")
+            return False
+    
     def _get_conflict_details(self, date_str: str, start_time: str, end_time: str, staff_name: str, exclude_reservation_id: str = None) -> dict:
         """Get details about conflicting appointments"""
         try:
