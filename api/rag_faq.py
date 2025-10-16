@@ -16,6 +16,11 @@ class RAGFAQ:
     def _load_faq_data(self, path: str) -> List[Dict[str, Any]]:
         """Load FAQ data from JSON file"""
         try:
+            # Make path relative to this module's directory
+            if not os.path.isabs(path):
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                path = os.path.join(base_dir, path.replace('api/', ''))
+            
             with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
@@ -25,6 +30,11 @@ class RAGFAQ:
     def _load_kb_data(self, path: str) -> Dict[str, str]:
         """Load KB data from JSON file and convert to key-value mapping"""
         try:
+            # Make path relative to this module's directory
+            if not os.path.isabs(path):
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                path = os.path.join(base_dir, path.replace('api/', ''))
+            
             with open(path, 'r', encoding='utf-8') as f:
                 kb_list = json.load(f)
             
