@@ -162,9 +162,9 @@ def handle_message(event: MessageEvent):
     try:
         # Handle consent flow
         if message_text == "同意画面を開く":
-            return handle_consent_screen(user_id, user_name)
+            return handle_consent_screen(user_id, user_name, event.reply_token)
         elif message_text in ["同意する", "同意しない"]:
-            return handle_consent_response(user_id, user_name, message_text)
+            return handle_consent_response(user_id, user_name, message_text, event.reply_token)
         
         # Special ping-pong test
         if message_text == "ping":
@@ -350,7 +350,7 @@ def handle_follow(event: FollowEvent):
     except Exception as e:
         logging.error(f"Failed to send consent button: {e}")
 
-def handle_consent_screen(user_id: str, user_name: str):
+def handle_consent_screen(user_id: str, user_name: str, reply_token: str):
     """Handle consent screen display"""
     try:
         consent_screen_message = f"""📋 利用規約・プライバシーポリシー
@@ -397,12 +397,14 @@ def handle_consent_screen(user_id: str, user_name: str):
 
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
-            line_bot_api.push_message(
-                user_id=user_id,
-                messages=[
-                    TextMessage(text=consent_screen_message),
-                    consent_button
-                ]
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=reply_token,
+                    messages=[
+                        TextMessage(text=consent_screen_message),
+                        consent_button
+                    ]
+                )
             )
         
         logging.info(f"Sent consent screen to user: {user_id} ({user_name})")
@@ -410,7 +412,7 @@ def handle_consent_screen(user_id: str, user_name: str):
     except Exception as e:
         logging.error(f"Failed to send consent screen: {e}")
 
-def handle_consent_response(user_id: str, user_name: str, message_text: str):
+def handle_consent_response(user_id: str, user_name: str, message_text: str, reply_token: str):
     """Handle user's consent response"""
     try:
         if message_text == "同意する":
@@ -432,9 +434,11 @@ def handle_consent_response(user_id: str, user_name: str, message_text: str):
 
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
-                line_bot_api.push_message(
-                    user_id=user_id,
-                    messages=[TextMessage(text=welcome_message)]
+                line_bot_api.reply_message_with_http_info(
+                    ReplyMessageRequest(
+                        reply_token=reply_token,
+                        messages=[TextMessage(text=welcome_message)]
+                    )
                 )
             
             # Mark user as consented
@@ -454,9 +458,11 @@ def handle_consent_response(user_id: str, user_name: str, message_text: str):
 
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
-                line_bot_api.push_message(
-                    user_id=user_id,
-                    messages=[TextMessage(text=goodbye_message)]
+                line_bot_api.reply_message_with_http_info(
+                    ReplyMessageRequest(
+                        reply_token=reply_token,
+                        messages=[TextMessage(text=goodbye_message)]
+                    )
                 )
             
             logging.info(f"User declined consent: {user_id} ({user_name})")
