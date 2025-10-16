@@ -21,12 +21,48 @@ class ReminderScheduler:
         else:
             logging.info("Reminder scheduler disabled")
     
+    def _load_kb_data(self):
+        """Load data from kb.json file"""
+        try:
+            import json
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            kb_file = os.path.join(current_dir, "data", "kb.json")
+            
+            with open(kb_file, 'r', encoding='utf-8') as f:
+                kb_data = json.load(f)
+            
+            # Convert array format to dictionary
+            kb_dict = {}
+            for item in kb_data:
+                key = item.get('キー', '')
+                value = item.get('例（置換値）', '')
+                kb_dict[key] = value
+            
+            return kb_dict
+            
+        except Exception as e:
+            logging.error(f"Error loading kb.json: {e}")
+            return {}
+    
     def _setup_schedule(self):
         """Setup the daily reminder schedule"""
-        # Schedule reminders to run at 9:00 AM daily
-        schedule.every().day.at("09:50").do(self._run_reminders)
+        # Load reminder time from kb.json
+        kb_data = self._load_kb_data()
+        remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
         
-        logging.info("Reminder schedule set: Daily at 9:00 AM")
+        # Extract time from the string (e.g., "来店前日 09:00 自動配信" -> "09:00")
+        import re
+        time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
+        if time_match:
+            schedule_time = f"{time_match.group(1)}:{time_match.group(2)}"
+        else:
+            schedule_time = "09:00"  # Default fallback
+            logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
+        
+        # Schedule reminders at the configured time
+        schedule.every().day.at(schedule_time).do(self._run_reminders)
+        
+        logging.info(f"Reminder schedule set: Daily at {schedule_time} (from kb.json: {remind_time})")
     
     def _run_reminders(self):
         """Run the daily reminder process"""
@@ -88,9 +124,14 @@ class ReminderScheduler:
     
     def get_status(self):
         """Get scheduler status"""
+        # Get configured reminder time from kb.json
+        kb_data = self._load_kb_data()
+        remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
+        
         return {
             'enabled': self.enabled,
             'timezone': self.timezone,
+            'remind_time': remind_time,
             'next_run': self.get_next_run_time(),
             'jobs_count': len(schedule.get_jobs())
         }

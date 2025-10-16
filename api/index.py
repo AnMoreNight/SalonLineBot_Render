@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import threading
 from fastapi import FastAPI, Request, Header, HTTPException
 from dotenv import load_dotenv
 from linebot.v3 import WebhookHandler
@@ -11,6 +12,7 @@ from api.rag_faq import RAGFAQ
 from api.chatgpt_faq import ChatGPTFAQ
 from api.reservation_flow import ReservationFlow
 from api.google_sheets_logger import GoogleSheetsLogger
+from api.reminder_scheduler import reminder_scheduler
 
 load_dotenv()
 
@@ -44,10 +46,56 @@ except Exception as e:
 
 app = FastAPI()
 
+# Global variable to track scheduler thread
+scheduler_thread = None
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the reminder scheduler on application startup"""
+    global scheduler_thread
+    
+    try:
+        if reminder_scheduler.enabled:
+            logging.info("Starting reminder scheduler...")
+            
+            # Start scheduler in a separate thread
+            scheduler_thread = threading.Thread(
+                target=reminder_scheduler.run_scheduler,
+                daemon=True,  # Dies when main thread dies
+                name="ReminderScheduler"
+            )
+            scheduler_thread.start()
+            
+            logging.info("Reminder scheduler started successfully")
+        else:
+            logging.info("Reminder scheduler is disabled")
+            
+    except Exception as e:
+        logging.error(f"Failed to start reminder scheduler: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up on application shutdown"""
+    global scheduler_thread
+    
+    if scheduler_thread and scheduler_thread.is_alive():
+        logging.info("Stopping reminder scheduler...")
+        # Note: The scheduler thread will stop when the main process exits
+        # since it's marked as daemon=True
 
 @app.get("/")
 async def health():
     return {"status": "ok"}
+
+@app.get("/api/reminder-status")
+async def reminder_status():
+    """Get reminder scheduler status"""
+    global scheduler_thread
+    
+    status = reminder_scheduler.get_status()
+    status["scheduler_thread_alive"] = scheduler_thread.is_alive() if scheduler_thread else False
+    
+    return status
 
 @app.post("/api/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):

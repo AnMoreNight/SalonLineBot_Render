@@ -252,20 +252,13 @@ class ReminderSystem:
             logging.error(f"Error sending reminder notification to manager: {e}")
             return False
     
+    
     def run_daily_reminders(self) -> Dict[str, Any]:
         """Run daily reminder process"""
         logging.info("Starting daily reminder process...")
         
         # Get tomorrow's reservations
         reservations = self.get_tomorrow_reservations()
-        
-        if not reservations:
-            logging.info("No reservations found for tomorrow")
-            return {
-                'success_count': 0,
-                'total_count': 0,
-                'failed_reservations': []
-            }
         
         success_count = 0
         failed_reservations = []
@@ -305,27 +298,3 @@ def run_daily_reminders():
     return reminder_system.run_daily_reminders()
 
 
-if __name__ == "__main__":
-    # Test the reminder system
-    print("🧪 Testing Reminder System")
-    print("=" * 50)
-    
-    system = ReminderSystem()
-    
-    if not system.enabled:
-        print("❌ Reminder system not enabled")
-        print("Set LINE_CHANNEL_ACCESS_TOKEN environment variable")
-    else:
-        print("✅ Reminder system enabled")
-        
-        # Test getting tomorrow's reservations
-        reservations = system.get_tomorrow_reservations()
-        print(f"📅 Found {len(reservations)} reservations for tomorrow")
-        
-        for i, res in enumerate(reservations[:3]):  # Show first 3
-            print(f"  {i+1}. {res.get('client_name', 'N/A')} - {res.get('date', 'N/A')} {res.get('start_time', 'N/A')}")
-        
-        if len(reservations) > 3:
-            print(f"  ... and {len(reservations) - 3} more")
-        
-        print("\n✅ Reminder system test completed!")
