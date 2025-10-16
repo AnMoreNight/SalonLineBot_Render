@@ -317,7 +317,18 @@ class GoogleSheetsLogger:
         
         # Get the first record (which should be the headers)
         first_record = records[0]
-        expected_headers = ["Timestamp", "User ID", "Display Name", "Phone Number", "Status", "Notes"]
+        expected_headers = [
+            "Timestamp",
+            "User ID",
+            "Display Name",
+            "Phone Number",
+            "Status",
+            "Notes",
+            "Consented",
+            "Consent Date",
+            "First Seen",
+            "Last Seen"
+        ]
         
         # Check if all expected headers are present
         for header in expected_headers:
@@ -334,7 +345,11 @@ class GoogleSheetsLogger:
             "Display Name",
             "Phone Number",
             "Status",
-            "Notes"
+            "Notes",
+            "Consented",
+            "Consent Date",
+            "First Seen",
+            "Last Seen"
         ]
         worksheet.append_row(headers)
         logging.info("Users worksheet headers set up successfully")
@@ -644,12 +659,16 @@ class GoogleSheetsLogger:
             # Prepare user data
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             user_data = [
-                timestamp,
-                user_id,
-                display_name,
-                phone_number,
-                "Active",
-                "Added via LINE Bot"
+                timestamp,                 # Timestamp
+                user_id,                   # User ID
+                display_name,              # Display Name
+                phone_number,              # Phone Number
+                "Active",                 # Status
+                "Added via LINE Bot",     # Notes
+                "No",                     # Consented (Yes/No)
+                "",                       # Consent Date
+                timestamp,                 # First Seen
+                timestamp                  # Last Seen
             ]
             
             logging.info(f"Adding user data: {user_data}")
@@ -689,12 +708,96 @@ class GoogleSheetsLogger:
             for i, record in enumerate(records, start=2):  # Start from row 2 (skip header)
                 if record.get('User ID') == user_id:
                     # Update status
-                    self.users_worksheet.update_cell(i, 6, status)  # Status column
+                    self.users_worksheet.update_cell(i, 5, status)  # Status column (5th)
                     if notes:
-                        self.users_worksheet.update_cell(i, 7, notes)  # Notes column
+                        self.users_worksheet.update_cell(i, 6, notes)  # Notes column (6th)
                     
                     logging.info(f"Updated user {user_id} status to: {status}")
                     return True
+            logging.warning(f"User {user_id} not found for status update")
+            return False
+        except Exception as e:
+            logging.error(f"Error updating user status: {e}")
+            return False
+    # -----------------------------
+    # Users sheet consent/session helpers
+    # -----------------------------
+    def has_user_consented(self, user_id: str) -> bool:
+        if not self.users_worksheet:
+            return False
+        try:
+            records = self.users_worksheet.get_all_records()
+            for record in records:
+                if record.get('User ID') == user_id:
+                    return str(record.get('Consented', 'No')).strip().lower() in ("yes", "true", "1", "y")
+            return False
+        except Exception as e:
+            logging.error(f"Error checking consent for {user_id}: {e}")
+            return False
+
+    def mark_user_consented(self, user_id: str) -> bool:
+        if not self.users_worksheet:
+            return False
+        try:
+            records = self.users_worksheet.get_all_records()
+            for i, record in enumerate(records, start=2):
+                if record.get('User ID') == user_id:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.users_worksheet.update_cell(i, 7, "Yes")        # Consented
+                    self.users_worksheet.update_cell(i, 8, timestamp)      # Consent Date
+                    logging.info(f"Marked consented in Users sheet: {user_id}")
+                    return True
+            # If not found, create a new user row first
+            self.log_new_user(user_id, display_name="", phone_number="")
+            return self.mark_user_consented(user_id)
+        except Exception as e:
+            logging.error(f"Error marking consent for {user_id}: {e}")
+            return False
+
+    def revoke_user_consent(self, user_id: str) -> bool:
+        if not self.users_worksheet:
+            return False
+        try:
+            records = self.users_worksheet.get_all_records()
+            for i, record in enumerate(records, start=2):
+                if record.get('User ID') == user_id:
+                    self.users_worksheet.update_cell(i, 7, "No")         # Consented
+                    self.users_worksheet.update_cell(i, 8, "")            # Consent Date
+                    logging.info(f"Revoked consent in Users sheet: {user_id}")
+                    return True
+            return False
+        except Exception as e:
+            logging.error(f"Error revoking consent for {user_id}: {e}")
+            return False
+
+    def is_new_user(self, user_id: str) -> bool:
+        if not self.users_worksheet:
+            return True
+        try:
+            records = self.users_worksheet.get_all_records()
+            for record in records:
+                if record.get('User ID') == user_id:
+                    return False
+            return True
+        except Exception:
+            return True
+
+    def mark_user_seen(self, user_id: str) -> bool:
+        if not self.users_worksheet:
+            return False
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            records = self.users_worksheet.get_all_records()
+            for i, record in enumerate(records, start=2):
+                if record.get('User ID') == user_id:
+                    self.users_worksheet.update_cell(i, 10, timestamp)     # Last Seen
+                    return True
+            # If user not found, create with first/last seen set
+            self.log_new_user(user_id, display_name="", phone_number="")
+            return True
+        except Exception as e:
+            logging.error(f"Error marking user seen for {user_id}: {e}")
+            return False
             
             logging.warning(f"User {user_id} not found for status update")
             return False

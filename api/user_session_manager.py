@@ -1,60 +1,43 @@
 """
-User session manager for tracking user interactions
+User session manager backed by Google Sheets "Users" worksheet
 """
-import os
-import json
 import logging
-from typing import Set
-from datetime import datetime, timedelta
+from api.google_sheets_logger import GoogleSheetsLogger
+
 
 class UserSessionManager:
     def __init__(self):
-        self.seen_users_file = "user_sessions.json"
-        self.seen_users = self._load_seen_users()
-    
-    def _load_seen_users(self) -> Set[str]:
-        """Load the set of users who have been seen before"""
-        try:
-            if os.path.exists(self.seen_users_file):
-                with open(self.seen_users_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    # Convert list back to set
-                    return set(data.get('seen_users', []))
-            return set()
-        except Exception as e:
-            logging.error(f"Error loading user sessions: {e}")
-            return set()
-    
-    def _save_seen_users(self):
-        """Save the set of seen users to file"""
-        try:
-            data = {
-                'seen_users': list(self.seen_users),
-                'last_updated': datetime.now().isoformat()
-            }
-            with open(self.seen_users_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logging.error(f"Error saving user sessions: {e}")
-    
+        self.sheets_logger = GoogleSheetsLogger()
+
     def is_new_user(self, user_id: str) -> bool:
         """Check if this is a new user (first time interacting with bot)"""
-        return user_id not in self.seen_users
-    
+        try:
+            return self.sheets_logger.is_new_user(user_id)
+        except Exception as e:
+            logging.error(f"is_new_user failed for {user_id}: {e}")
+            # Assume new user on failure to avoid duplicate notifications
+            return True
+
     def mark_user_seen(self, user_id: str):
         """Mark a user as seen (they have interacted with the bot)"""
-        self.seen_users.add(user_id)
-        self._save_seen_users()
-        logging.info(f"Marked user {user_id} as seen")
-    
+        try:
+            self.sheets_logger.mark_user_seen(user_id)
+            logging.info(f"Marked user {user_id} as seen in Users sheet")
+        except Exception as e:
+            logging.error(f"mark_user_seen failed for {user_id}: {e}")
+
     def get_user_count(self) -> int:
         """Get total number of unique users who have interacted with the bot"""
-        return len(self.seen_users)
-    
+        try:
+            records = self.sheets_logger.users_worksheet.get_all_records() if self.sheets_logger.users_worksheet else []
+            # Count rows with a User ID
+            return sum(1 for r in records if r.get('User ID'))
+        except Exception as e:
+            logging.error(f"get_user_count failed: {e}")
+            return 0
+
     def cleanup_old_sessions(self, days_old: int = 30):
-        """Clean up old session data (optional maintenance function)"""
-        # For now, we keep all users indefinitely
-        # In the future, you might want to implement cleanup based on last activity
+        """No-op for sheet-backed sessions (kept for compatibility)"""
         pass
 
 
