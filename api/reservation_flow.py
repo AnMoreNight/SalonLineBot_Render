@@ -173,7 +173,7 @@ class ReservationFlow:
     def handle_reservation_flow(self, user_id: str, message: str) -> str:
         """Handle the complete reservation flow"""
         if user_id not in self.user_states:
-            self.user_states[user_id] = {"step": "start", "data": {}}
+            self.user_states[user_id] = {"step": "start", "data": {"user_id": user_id}}
         
         # Check for flow cancellation at any step
         flow_cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
@@ -651,6 +651,18 @@ class ReservationFlow:
             reservation_data = self.user_states[user_id]["data"].copy()
             print("reservation_data", reservation_data)
             
+            # CRITICAL: Check availability again before confirming to prevent race conditions
+            availability_check = self._check_final_availability(reservation_data)
+            if not availability_check["available"]:
+                # Slot is no longer available - inform user and clear state
+                del self.user_states[user_id]
+                return f"""❌ 申し訳ございませんが、選択された時間帯は既に他のお客様にご予約いただいておりました。
+
+{availability_check["message"]}
+
+別の時間帯でご予約いただけますでしょうか？
+「予約したい」とお送りください。"""
+            
             # Generate reservation ID
             reservation_id = self.google_calendar.generate_reservation_id(reservation_data['date'])
             reservation_data['reservation_id'] = reservation_id
@@ -723,8 +735,140 @@ class ReservationFlow:
 
 当日はお時間までにお越しください。
 ご予約ありがとうございました！"""
-        else:
-            return "予約をキャンセルいたします。またのご利用をお待ちしております。"
+    
+    def _check_final_availability(self, reservation_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check if the reservation slot is still available before final confirmation.
+        This prevents race conditions when multiple users try to book the same slot.
+        """
+        try:
+            date_str = reservation_data['date']
+            start_time = reservation_data.get('start_time', reservation_data.get('time', ''))
+            end_time = reservation_data.get('end_time', '')
+            staff_name = reservation_data['staff']
+            user_id = reservation_data.get('user_id', '')
+            
+            # If no end_time, calculate it from service duration
+            if not end_time:
+                service_info = self.services.get(reservation_data['service'], {})
+                duration = service_info.get('duration', 60)  # Default 60 minutes
+                start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+                end_dt = start_dt + timedelta(minutes=duration)
+                end_time = end_dt.strftime("%H:%M")
+            
+            # Check staff availability for the time slot
+            staff_available = self.google_calendar.check_staff_availability_for_time(
+                date_str, start_time, end_time, staff_name
+            )
+            
+            if not staff_available:
+                return {
+                    "available": False,
+                    "message": f"👨‍💼 {staff_name}さんの{start_time}~{end_time}の時間帯は既に予約が入っております。"
+                }
+            
+            # Check if user has another reservation at the same time
+            user_conflict = self.google_calendar.check_user_time_conflict(
+                date_str, start_time, end_time, user_id
+            )
+            
+            if user_conflict:
+                return {
+                    "available": False,
+                    "message": f"⚠️ 同じ時間帯に他のご予約がございます。"
+                }
+            
+            return {"available": True, "message": ""}
+            
+        except Exception as e:
+            logging.error(f"Error checking final availability: {e}")
+            # If there's an error, assume it's available to avoid blocking legitimate reservations
+            return {"available": True, "message": ""}
+    
+    def _check_modification_availability(self, reservation: Dict[str, Any], pending_modification: Dict[str, Any], modification_type: str) -> Dict[str, Any]:
+        """
+        Check if the modification target slot is still available before final confirmation.
+        This prevents race conditions when multiple users try to modify to the same slot.
+        """
+        try:
+            if modification_type == "time":
+                # Check time modification availability
+                new_date = pending_modification.get("new_date", reservation["date"])
+                new_time = pending_modification.get("new_time", "")
+                
+                if not new_time:
+                    return {"available": True, "message": ""}
+                
+                # Parse time range
+                start_time, end_time = self._parse_time_range(new_time)
+                if not start_time or not end_time:
+                    return {"available": True, "message": ""}
+                
+                # Check staff availability for the new time slot
+                staff_available = self.google_calendar.check_staff_availability_for_time(
+                    new_date, start_time, end_time, reservation["staff"], reservation["reservation_id"]
+                )
+                
+                if not staff_available:
+                    return {
+                        "available": False,
+                        "message": f"👨‍💼 {reservation['staff']}さんの{start_time}~{end_time}の時間帯は既に予約が入っております。"
+                    }
+                
+                # Check if user has another reservation at the same time
+                user_conflict = self.google_calendar.check_user_time_conflict(
+                    new_date, start_time, end_time, reservation.get("user_id", ""), reservation["reservation_id"]
+                )
+                
+                if user_conflict:
+                    return {
+                        "available": False,
+                        "message": f"⚠️ 同じ時間帯に他のご予約がございます。"
+                    }
+                
+            elif modification_type == "service":
+                # Check service modification availability
+                new_service = pending_modification.get("new_service", "")
+                if not new_service:
+                    return {"available": True, "message": ""}
+                
+                # Check if service change causes overlap
+                has_overlap, new_end_time, conflict_details = self.google_calendar.check_service_change_overlap(
+                    reservation["date"], reservation["start_time"], new_service, reservation["staff"], reservation["reservation_id"]
+                )
+                
+                if has_overlap:
+                    conflict_message = ""
+                    if conflict_details:
+                        conflict_message = conflict_details.get('message', '')
+                    return {
+                        "available": False,
+                        "message": f"⚠️ {new_service}に変更すると時間が重複します。{conflict_message}"
+                    }
+                
+            elif modification_type == "staff":
+                # Check staff modification availability
+                new_staff = pending_modification.get("new_staff", "")
+                if not new_staff:
+                    return {"available": True, "message": ""}
+                
+                # Check if new staff is available at the same time
+                staff_available = self.google_calendar.check_staff_availability_for_time(
+                    reservation["date"], reservation["start_time"], reservation["end_time"], new_staff, reservation["reservation_id"]
+                )
+                
+                if not staff_available:
+                    return {
+                        "available": False,
+                        "message": f"👨‍💼 {new_staff}さんの{reservation['start_time']}~{reservation['end_time']}の時間帯は既に予約が入っております。"
+                    }
+            
+            return {"available": True, "message": ""}
+            
+        except Exception as e:
+            logging.error(f"Error checking modification availability: {e}")
+            # If there's an error, assume it's available to avoid blocking legitimate modifications
+            return {"available": True, "message": ""}
     
     def get_response(self, user_id: str, message: str) -> str:
         """Main entry point for reservation flow"""
@@ -1530,6 +1674,18 @@ class ReservationFlow:
         except Exception as e:
             logging.error(f"Error checking modification time limit: {e}")
             # Continue with modification if time check fails
+        
+        # CRITICAL: Check availability again before confirming modification to prevent race conditions
+        availability_check = self._check_modification_availability(reservation, pending_modification, modification_type)
+        if not availability_check["available"]:
+            # Slot is no longer available - inform user and clear state
+            del self.user_states[user_id]
+            return f"""❌ 申し訳ございませんが、変更先の時間帯は既に他のお客様にご予約いただいておりました。
+
+{availability_check["message"]}
+
+別の時間帯で変更いただけますでしょうか？
+「予約を変更したい」とお送りください。"""
         
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
