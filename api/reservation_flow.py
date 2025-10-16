@@ -381,6 +381,59 @@ class ReservationFlow:
 💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
     
+    def _check_advance_booking_time(self, date_str: str, start_time: str) -> tuple:
+        """
+        Check if the requested booking time is at least 2 hours in advance.
+        Returns (is_valid, error_message)
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Parse the requested date and time
+            requested_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            
+            # Get current time
+            current_datetime = datetime.now()
+            
+            # Calculate time difference
+            time_difference = requested_datetime - current_datetime
+            hours_until_booking = time_difference.total_seconds() / 3600
+            
+            # Check if it's at least 2 hours in advance
+            if hours_until_booking < 2.0:
+                # Calculate how much time is needed
+                needed_hours = 2 - hours_until_booking
+                needed_minutes = int(needed_hours * 60)
+                
+                # Handle edge case where needed_minutes is 0
+                if needed_minutes <= 0:
+                    time_message = "数分"
+                elif needed_minutes < 60:
+                    time_message = f"{needed_minutes}分"
+                else:
+                    hours = needed_minutes // 60
+                    minutes = needed_minutes % 60
+                    if minutes == 0:
+                        time_message = f"{hours}時間"
+                    else:
+                        time_message = f"{hours}時間{minutes}分"
+                
+                error_message = f"""申し訳ございませんが、ご予約は来店の2時間前までにお取りいただけます。
+
+📅 ご希望の日時：{date_str} {start_time}
+⏰ 現在時刻：{current_datetime.strftime('%Y-%m-%d %H:%M')}
+⏱️ 必要時間：あと{time_message}お待ちください
+
+2時間以上先の時間帯をご選択ください。"""
+                
+                return False, error_message
+            
+            return True, None
+            
+        except Exception as e:
+            logging.error(f"Error checking advance booking time: {e}")
+            return False, "時間の確認中にエラーが発生しました。"
+    
     def _handle_time_selection(self, user_id: str, message: str) -> str:
         """Handle time selection"""
         # Check for flow cancellation first
@@ -420,6 +473,11 @@ class ReservationFlow:
 
 💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
+
+        # Check if the booking time is at least 2 hours in advance
+        is_valid_time, time_error_message = self._check_advance_booking_time(selected_date, start_time)
+        if not is_valid_time:
+            return time_error_message
 
         # Validate that start time is before end time
         if start_time >= end_time:
@@ -1446,6 +1504,11 @@ class ReservationFlow:
         
         # Get the selected date (might be different from original reservation date)
         selected_date = self.user_states[user_id].get("selected_date", reservation["date"])
+        
+        # Check if the new booking time is at least 2 hours in advance
+        is_valid_time, time_error_message = self._check_advance_booking_time(selected_date, start_time)
+        if not is_valid_time:
+            return time_error_message
         
         # Calculate the correct end time based on service duration
         try:
