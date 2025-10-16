@@ -73,16 +73,53 @@ class RAGFAQ:
     
     def _extract_keywords(self, text: str) -> List[str]:
         """Extract keywords from text for matching"""
-        # Remove common Japanese particles and words
-        stop_words = ['は', 'が', 'を', 'に', 'で', 'と', 'の', 'です', 'ます', 'です', 'か', 'の', 'を', 'に', 'で', 'と', 'は', 'が']
+        # Less aggressive stop words - keep important particles
+        stop_words = ['です', 'ます', 'か', 'の', 'を', 'に', 'で', 'と']
         
         # Simple keyword extraction
         words = re.findall(r'[a-zA-Z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]+', text)
         keywords = [word for word in words if len(word) > 1 and word not in stop_words]
         
-        return keywords
+        # Add synonym expansion
+        expanded_keywords = self._expand_synonyms(keywords)
+        
+        return expanded_keywords
     
-    def search(self, query: str, threshold: float = 0.3) -> Optional[Dict[str, Any]]:
+    def _expand_synonyms(self, keywords: List[str]) -> List[str]:
+        """Expand keywords with synonyms"""
+        synonyms = {
+            '料金': ['値段', '価格', '費用', '代金'],
+            '予約': ['予約する', '予約方法', '予約の仕方'],
+            '時間': ['営業時間', '開店時間', '閉店時間'],
+            '駅': ['最寄り駅', '駅'],
+            '店': ['お店', '店', 'サロン'],
+            '名前': ['店名', '名前'],
+            '住所': ['場所', '所在地'],
+            '電話': ['電話番号', '連絡先'],
+            '駐車場': ['パーキング', '駐車'],
+            '休み': ['定休日', '休業日'],
+            'カット': ['ヘアカット', 'カット'],
+            'カラー': ['ヘアカラー', 'カラー'],
+            'パーマ': ['ヘアパーマ', 'パーマ']
+        }
+        
+        expanded = set(keywords)
+        
+        # Check for synonyms in each keyword (including partial matches)
+        for keyword in keywords:
+            # Direct synonym match
+            if keyword in synonyms:
+                expanded.update(synonyms[keyword])
+            
+            # Check for partial matches (e.g., "料金は" contains "料金")
+            for base_word, synonym_list in synonyms.items():
+                if base_word in keyword:
+                    expanded.update(synonym_list)
+                    expanded.add(base_word)  # Add the base word too
+        
+        return list(expanded)
+    
+    def search(self, query: str, threshold: float = 0.2) -> Optional[Dict[str, Any]]:
         """
         Search for KB facts using lightweight keyword matching
         Returns None if no good match found (KB only approach)
@@ -97,16 +134,22 @@ class RAGFAQ:
         best_score = 0
         
         for index_item in self.keyword_index:
-            # Calculate keyword overlap score
+            # Calculate improved keyword overlap score
             overlap = len(set(query_keywords) & set(index_item['keywords']))
-            total_keywords = len(set(query_keywords) | set(index_item['keywords']))
             
-            if total_keywords > 0:
-                score = overlap / total_keywords
+            # Use min length instead of union to avoid penalizing short queries
+            min_length = min(len(query_keywords), len(index_item['keywords']))
+            
+            if min_length > 0:
+                score = overlap / min_length
                 
-                # Also check for direct text matches
+                # Bonus for direct text matches
                 if any(keyword in index_item['question'] for keyword in query_keywords):
-                    score += 0.2
+                    score += 0.3
+                
+                # Bonus for exact question match
+                if query_lower.strip('？?') == index_item['question'].lower().strip('？?'):
+                    score = 1.0
                 
                 if score > best_score:
                     best_score = score
