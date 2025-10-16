@@ -139,7 +139,7 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
             # If user is in cancel or modify flow, continue the flow regardless of message type
-            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_confirm"]:
+            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
                 logging.info(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
                 return intent
@@ -1083,7 +1083,7 @@ class ReservationFlow:
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Step 1: Start modification flow - show user's reservations
-        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_confirm"]:
+        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm"]:
             self.user_states[user_id] = {"step": "modify_select_reservation"}
             return self._show_user_reservations_for_modification(user_id)
         
@@ -1104,7 +1104,11 @@ class ReservationFlow:
         elif state.get("step") == "modify_time_input_date":
             return self._handle_time_input_date(user_id, message)
         
-        # Step 6: Handle confirmation
+        # Step 6: Handle time selection for modification
+        elif state.get("step") == "modify_time_select":
+            return self._handle_time_selection_for_modification(user_id, message)
+        
+        # Step 7: Handle confirmation
         elif state.get("step") == "modify_confirm":
             return self._handle_modification_confirmation(user_id, message)
         
@@ -1361,7 +1365,7 @@ class ReservationFlow:
         # Store the selected date and available slots
         self.user_states[user_id]["selected_date"] = date
         self.user_states[user_id]["available_slots"] = available_slots
-        self.user_states[user_id]["step"] = "modify_confirm"
+        self.user_states[user_id]["step"] = "modify_time_select"
         
         # Create time options message with current reservation marker
         time_options = []
@@ -1393,59 +1397,105 @@ class ReservationFlow:
 
 💡 現在の予約時間も選択可能です（変更なしの確認）"""
     
+    def _handle_time_selection_for_modification(self, user_id: str, message: str) -> str:
+        """Handle time selection for modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        selected_date = state["selected_date"]
+        
+        # Store modification type and pending modification
+        self.user_states[user_id]["modification_type"] = "time"
+        self.user_states[user_id]["step"] = "modify_confirm"
+        self.user_states[user_id]["pending_modification"] = {
+            "type": "time",
+            "new_date": selected_date,
+            "new_time": message
+        }
+        
+        # Show confirmation message
+        return f"""時間変更の確認
+
+📅 変更内容：
+• 日付：{selected_date}
+• 時間：{message}
+
+この内容で変更を確定しますか？
+
+「はい」または「確定」で変更を確定
+「キャンセル」で変更を中止"""
+    
     def _handle_service_modification(self, user_id: str, message: str) -> str:
         """Handle service modification with duration validation"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Store modification type
+        # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "service"
         self.user_states[user_id]["step"] = "modify_confirm"
+        self.user_states[user_id]["pending_modification"] = {
+            "type": "service",
+            "new_service": message
+        }
         
-        # Show available services
-        service_options = []
-        for service_name, service_info in self.services.items():
-            current_marker = " (現在のサービス)" if service_name == reservation["service"] else ""
-            service_options.append(f"✅ {service_name} ({service_info['duration']}分・{service_info['price']:,}円){current_marker}")
-        
-        return f"""サービス変更ですね！
+        # Show confirmation message
+        return f"""サービス変更の確認
 
-現在のサービス：{reservation['service']} ({reservation['duration']}分)
+📅 変更内容：
+• 現在のサービス：{reservation['service']} ({reservation['duration']}分)
+• 新しいサービス：{message}
 
-利用可能なサービス：
-{chr(10).join(service_options)}
+この内容で変更を確定しますか？
 
-新しいサービス名を入力してください。"""
+「はい」または「確定」で変更を確定
+「キャンセル」で変更を中止"""
     
     def _handle_staff_modification(self, user_id: str, message: str) -> str:
         """Handle staff modification"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Store modification type
+        # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "staff"
         self.user_states[user_id]["step"] = "modify_confirm"
+        self.user_states[user_id]["pending_modification"] = {
+            "type": "staff",
+            "new_staff": message
+        }
         
-        # Show available staff
-        staff_options = []
-        for staff_name, staff_info in self.staff_members.items():
-            current_marker = " (現在の担当者)" if staff_name == reservation["staff"] else ""
-            staff_options.append(f"✅ {staff_name} ({staff_info['specialty']}・{staff_info['experience']}){current_marker}")
-        
-        return f"""担当者変更ですね！
+        # Show confirmation message
+        return f"""担当変更の確認
 
-現在の担当者：{reservation['staff']}
+📅 変更内容：
+• 現在の担当：{reservation['staff']}
+• 新しい担当：{message}
 
-利用可能な担当者：
-{chr(10).join(staff_options)}
+この内容で変更を確定しますか？
 
-新しい担当者名を入力してください。"""
+「はい」または「確定」で変更を確定
+「キャンセル」で変更を中止"""
     
     def _handle_modification_confirmation(self, user_id: str, message: str) -> str:
         """Handle modification confirmation and execution"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         modification_type = state["modification_type"]
+        pending_modification = state.get("pending_modification", {})
+        
+        # Check for confirmation keywords
+        yes_keywords = self.confirmation_keywords.get("yes", [])
+        no_keywords = self.confirmation_keywords.get("no", [])
+        cancel_keywords = self.navigation_keywords.get("flow_cancel", [])
+        
+        if any(keyword in message for keyword in yes_keywords):
+            # User confirmed - proceed with modification
+            pass  # Continue to execution below
+        elif any(keyword in message for keyword in no_keywords) or any(keyword in message for keyword in cancel_keywords):
+            # User cancelled - abort modification
+            del self.user_states[user_id]
+            return "変更をキャンセルいたします。予約はそのまま残ります。\nまたのご利用をお待ちしております。"
+        else:
+            # Invalid response - ask again
+            return "「はい」または「確定」で変更を確定するか、「キャンセル」で中止してください。"
         
         # Check if modification is within 2 hours of reservation start time
         try:
@@ -1485,13 +1535,18 @@ class ReservationFlow:
             from api.google_sheets_logger import GoogleSheetsLogger
             sheets_logger = GoogleSheetsLogger()
             
-            # Process the modification based on type
+            # Process the modification based on type using pending modification data
             if modification_type == "time":
-                return self._process_time_modification(user_id, message, reservation, sheets_logger)
+                # Use the pending modification data
+                new_date = pending_modification.get("new_date", reservation["date"])
+                new_time = pending_modification.get("new_time", "")
+                return self._process_time_modification(user_id, new_time, reservation, sheets_logger, new_date)
             elif modification_type == "service":
-                return self._process_service_modification(user_id, message, reservation, sheets_logger)
+                new_service = pending_modification.get("new_service", "")
+                return self._process_service_modification(user_id, new_service, reservation, sheets_logger)
             elif modification_type == "staff":
-                return self._process_staff_modification(user_id, message, reservation, sheets_logger)
+                new_staff = pending_modification.get("new_staff", "")
+                return self._process_staff_modification(user_id, new_staff, reservation, sheets_logger)
             else:
                 return "申し訳ございません。変更処理中にエラーが発生しました。"
                 
@@ -1499,7 +1554,7 @@ class ReservationFlow:
             logging.error(f"Modification confirmation failed: {e}")
             return "申し訳ございません。変更処理中にエラーが発生しました。スタッフまでお問い合わせください。"
     
-    def _process_time_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger) -> str:
+    def _process_time_modification(self, user_id: str, message: str, reservation: Dict, sheets_logger, new_date: str = None) -> str:
         """Process time modification"""
         # Parse time range (ONLY accept time period format)
         start_time, end_time = self._parse_time_range(message)
@@ -1508,7 +1563,7 @@ class ReservationFlow:
             return "時間の形式が正しくありません。\n「開始時間~終了時間」の形式で入力してください。\n例）13:00~14:00"
         
         # Get the selected date (might be different from original reservation date)
-        selected_date = self.user_states[user_id].get("selected_date", reservation["date"])
+        selected_date = new_date or self.user_states[user_id].get("selected_date", reservation["date"])
         
         # Check if the new booking time is at least 2 hours in advance
         is_valid_time, time_error_message = self._check_advance_booking_time(selected_date, start_time)

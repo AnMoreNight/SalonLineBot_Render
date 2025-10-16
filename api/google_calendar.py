@@ -526,8 +526,39 @@ class GoogleCalendarHelper:
         if not self.calendar_id:
             return "https://calendar.google.com/calendar"
         
-        # Create a public calendar URL
-        # Format: https://calendar.google.com/calendar/embed?src=CALENDAR_ID
+        # Enhanced calendar URL with better visibility and Tokyo timezone
+        base_url = f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
+        params = [
+            "ctz=Asia%2FTokyo",  # Tokyo timezone
+            "mode=WEEK",         # Week view
+            "showTitle=0",       # Hide title
+            "showNav=1",         # Show navigation
+            "showDate=1",        # Show date
+            "showTabs=1",        # Show tabs
+            "showCalendars=1",   # Show calendar list
+            "showTz=1",          # Show timezone
+            "height=600",        # Calendar height
+            "wkst=1",            # Week starts Sunday
+            "bgcolor=%23ffffff", # White background
+            "color=%23B1365F"    # Calendar color
+        ]
+        
+        return f"{base_url}&{'&'.join(params)}"
+    
+    def get_public_calendar_url(self) -> str:
+        """Get the public calendar URL (if calendar is made public)"""
+        if not self.calendar_id:
+            return "https://calendar.google.com/calendar"
+        
+        # Public calendar URL format with Tokyo timezone
+        return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}&ctz=Asia%2FTokyo"
+    
+    def get_simple_calendar_url(self) -> str:
+        """Get a simple calendar URL for basic sharing"""
+        if not self.calendar_id:
+            return "https://calendar.google.com/calendar"
+        
+        # Simple calendar URL
         return f"https://calendar.google.com/calendar/embed?src={self.calendar_id}"
     
     def get_events_for_date(self, date_str: str) -> List[Dict]:
