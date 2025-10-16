@@ -351,14 +351,6 @@ def handle_follow(event: FollowEvent):
     
     # Send consent button to the user
     try:
-        consent_message = f"""こんにちは！{user_name}さん
-
-サロンの予約システムへようこそ！
-
-ご利用前に、利用規約とプライバシーポリシーに同意していただく必要があります。
-
-以下のボタンをタップして、同意画面をご確認ください。"""
-
         consent_button = TemplateMessage(
             alt_text="ご利用前に同意が必要です",
             template=ButtonsTemplate(
@@ -378,7 +370,6 @@ def handle_follow(event: FollowEvent):
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[
-                        TextMessage(text=consent_message),
                         consent_button
                     ]
                 )
