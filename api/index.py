@@ -6,8 +6,8 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from dotenv import load_dotenv
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, TemplateMessage, ButtonsTemplate, MessageAction
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent
 from api.rag_faq import RAGFAQ
 from api.chatgpt_faq import ChatGPTFAQ
 from api.reservation_flow import ReservationFlow
@@ -132,23 +132,40 @@ def handle_message(event: MessageEvent):
         logging.warning(f"Could not fetch user profile for {user_id}: {e}")
         user_name = "Unknown"
     
-    # Send notification for user login (only for new users)
+    # Check if user has consented (except for consent-related messages)
+    if message_text not in ["同意画面を開く", "同意する", "同意しない"]:
+        try:
+            from api.user_consent_manager import user_consent_manager
+            if not user_consent_manager.has_user_consented(user_id):
+                # User hasn't consented - send consent reminder
+                consent_reminder = f"""申し訳ございませんが、ボットをご利用いただくには、まず利用規約にご同意いただく必要があります。
+
+「同意画面を開く」とお送りいただくと、利用規約をご確認いただけます。"""
+                
+                with ApiClient(configuration) as api_client:
+                    line_bot_api = MessagingApi(api_client)
+                    line_bot_api.push_message(
+                        user_id=user_id,
+                        messages=[TextMessage(text=consent_reminder)]
+                    )
+                return
+        except Exception as e:
+            logging.error(f"Failed to check user consent: {e}")
+    
+    # Mark user as seen (for session tracking)
     try:
-        from api.notification_manager import send_user_login_notification
         from api.user_session_manager import user_session_manager
-        
-        # Check if this is a new user (first time adding bot as friend)
-        if user_session_manager.is_new_user(user_id):
-            send_user_login_notification(user_id, user_name)
-            logging.info(f"New user detected: {user_id} ({user_name})")
-        
-        # Mark user as seen (regardless of whether they're new or not)
         user_session_manager.mark_user_seen(user_id)
-        
     except Exception as e:
-        logging.error(f"Failed to send user login notification: {e}")
+        logging.error(f"Failed to mark user as seen: {e}")
 
     try:
+        # Handle consent flow
+        if message_text == "同意画面を開く":
+            return handle_consent_screen(user_id, user_name)
+        elif message_text in ["同意する", "同意しない"]:
+            return handle_consent_response(user_id, user_name, message_text)
+        
         # Special ping-pong test
         if message_text == "ping":
             reply = "pong"
@@ -272,4 +289,178 @@ def handle_message(event: MessageEvent):
                 action_type=action_type,
                 processing_time=processing_time
             )
+
+@handler.add(FollowEvent)
+def handle_follow(event: FollowEvent):
+    """Handle when a user adds the bot as a friend"""
+    user_id = event.source.user_id
+    
+    # Get user profile information
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            profile = line_bot_api.get_profile(user_id)
+            user_name = profile.display_name
+    except Exception as e:
+        logging.warning(f"Could not fetch user profile for {user_id}: {e}")
+        user_name = "Unknown"
+    
+    # Send login notification (user just added bot as friend)
+    try:
+        from api.notification_manager import send_user_login_notification
+        send_user_login_notification(user_id, user_name)
+        logging.info(f"New user added bot as friend: {user_id} ({user_name})")
+    except Exception as e:
+        logging.error(f"Failed to send user login notification: {e}")
+    
+    # Send consent button to the user
+    try:
+        consent_message = f"""こんにちは！{user_name}さん
+
+サロンの予約システムへようこそ！
+
+ご利用前に、利用規約とプライバシーポリシーに同意していただく必要があります。
+
+以下のボタンをタップして、同意画面をご確認ください。"""
+
+        consent_button = TemplateMessage(
+            alt_text="ご利用前に同意が必要です",
+            template=ButtonsTemplate(
+                text="ご利用前に同意が必要です",
+                actions=[
+                    MessageAction(
+                        label="ご利用前に同意",
+                        text="同意画面を開く"
+                    )
+                ]
+            )
+        )
+
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[
+                        TextMessage(text=consent_message),
+                        consent_button
+                    ]
+                )
+            )
+    except Exception as e:
+        logging.error(f"Failed to send consent button: {e}")
+
+def handle_consent_screen(user_id: str, user_name: str):
+    """Handle consent screen display"""
+    try:
+        consent_screen_message = f"""📋 利用規約・プライバシーポリシー
+
+{user_name}さん、サロンの予約システムをご利用いただき、ありがとうございます。
+
+【利用規約】
+1. 予約システムは美容室の予約管理のためのサービスです
+2. 正確な情報を入力してください
+3. 予約の変更・キャンセルは適切な時間内に行ってください
+4. システムの不適切な利用は禁止されています
+
+【プライバシーポリシー】
+1. お客様の個人情報は予約管理のみに使用されます
+2. 第三者への情報提供は行いません
+3. データは適切に保護・管理されます
+4. お客様の同意なく情報を利用することはありません
+
+【データの取り扱い】
+• 予約情報：日時、サービス、担当者
+• 連絡先：LINE ID、表示名
+• 利用履歴：予約・変更・キャンセル記録
+
+これらの内容に同意していただける場合は、「同意する」とお送りください。
+
+同意いただけない場合は、ボットの利用を終了してください。"""
+
+        consent_button = TemplateMessage(
+            alt_text="利用規約に同意してください",
+            template=ButtonsTemplate(
+                text="利用規約に同意してください",
+                actions=[
+                    MessageAction(
+                        label="同意する",
+                        text="同意する"
+                    ),
+                    MessageAction(
+                        label="同意しない",
+                        text="同意しない"
+                    )
+                ]
+            )
+        )
+
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(
+                user_id=user_id,
+                messages=[
+                    TextMessage(text=consent_screen_message),
+                    consent_button
+                ]
+            )
+        
+        logging.info(f"Sent consent screen to user: {user_id} ({user_name})")
+        
+    except Exception as e:
+        logging.error(f"Failed to send consent screen: {e}")
+
+def handle_consent_response(user_id: str, user_name: str, message_text: str):
+    """Handle user's consent response"""
+    try:
+        if message_text == "同意する":
+            # User agreed - send welcome message and mark as consented
+            welcome_message = f"""✅ ご同意いただき、ありがとうございます！
+
+{user_name}さん、サロンの予約システムをご利用いただけます。
+
+以下の機能をご利用いただけます：
+
+📅 予約作成
+🔄 予約変更
+❌ 予約キャンセル
+❓ よくある質問
+
+何かご質問がございましたら、お気軽にお声かけください。
+
+まずは「予約したい」とお送りください。"""
+
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.push_message(
+                    user_id=user_id,
+                    messages=[TextMessage(text=welcome_message)]
+                )
+            
+            # Mark user as consented
+            from api.user_consent_manager import user_consent_manager
+            user_consent_manager.mark_user_consented(user_id)
+            logging.info(f"User consented: {user_id} ({user_name})")
+            
+        elif message_text == "同意しない":
+            # User declined - send goodbye message
+            goodbye_message = f"""承知いたしました。
+
+{user_name}さん、ご利用規約にご同意いただけない場合は、ボットをご利用いただけません。
+
+ご利用規約にご同意いただけるようになりましたら、いつでもお声かけください。
+
+ありがとうございました。"""
+
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.push_message(
+                    user_id=user_id,
+                    messages=[TextMessage(text=goodbye_message)]
+                )
+            
+            logging.info(f"User declined consent: {user_id} ({user_name})")
+        
+    except Exception as e:
+        logging.error(f"Failed to handle consent response: {e}")
 

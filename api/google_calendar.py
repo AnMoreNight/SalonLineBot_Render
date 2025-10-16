@@ -531,7 +531,7 @@ class GoogleCalendarHelper:
         params = [
             "ctz=Asia%2FTokyo",  # Tokyo timezone
             "mode=WEEK",         # Week view
-            "showTitle=0",       # Hide title
+            "showTitle=1",       # Hide title
             "showNav=1",         # Show navigation
             "showDate=1",        # Show date
             "showTabs=1",        # Show tabs
