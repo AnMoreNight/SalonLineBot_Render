@@ -137,16 +137,36 @@ def handle_message(event: MessageEvent):
         try:
             from api.user_consent_manager import user_consent_manager
             if not user_consent_manager.has_user_consented(user_id):
-                # User hasn't consented - send consent reminder
-                consent_reminder = f"""申し訳ございませんが、ボットをご利用いただくには、まず利用規約にご同意いただく必要があります。
+                # User hasn't consented - send consent reminder with button
+                consent_reminder = f"""🔒 プライバシー同意が必要です
 
-「同意画面を開く」とお送りいただくと、利用規約をご確認いただけます。"""
+{user_name}さん、ボットをご利用いただくには、まず利用規約とプライバシーポリシーにご同意いただく必要があります。
+
+以下のボタンをタップして、同意画面をご確認ください。"""
+
+                consent_button = TemplateMessage(
+                    alt_text="利用規約に同意してください",
+                    template=ButtonsTemplate(
+                        text="利用規約に同意してください",
+                        actions=[
+                            MessageAction(
+                                label="同意画面を開く",
+                                text="同意画面を開く"
+                            )
+                        ]
+                    )
+                )
                 
                 with ApiClient(configuration) as api_client:
                     line_bot_api = MessagingApi(api_client)
-                    line_bot_api.push_message(
-                        user_id=user_id,
-                        messages=[TextMessage(text=consent_reminder)]
+                    line_bot_api.reply_message_with_http_info(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[
+                                TextMessage(text=consent_reminder),
+                                consent_button
+                            ]
+                        )
                     )
                 return
         except Exception as e:

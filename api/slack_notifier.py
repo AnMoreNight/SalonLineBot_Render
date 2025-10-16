@@ -71,96 +71,96 @@ class SlackNotifier:
     
     def notify_user_login(self, user_id: str, display_name: str) -> bool:
         """Send notification when user logs in"""
-        message = f"👤 **User Login**\n"
-        message += f"• User ID: `{user_id}`\n"
-        message += f"• Display Name: {display_name}\n"
-        message += f"• Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message = f"👤 **ユーザーログイン**\n"
+        message += f"• ユーザーID: `{user_id}`\n"
+        message += f"• 表示名: {display_name}\n"
+        message += f"• 時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return self.send_notification(
             message=message,
-            title="🔐 User Login",
+            title="🔐 ユーザーログイン",
             color="good"
         )
     
     def notify_reservation_confirmation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is confirmed"""
         calendar_url = self._get_calendar_url()
-        message = f"✅ **New Reservation Confirmed**\n"
-        message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
-        message += f"• Client: {client_name}\n"
-        message += f"• Date: {reservation_data.get('date', 'N/A')}\n"
-        message += f"• Time: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
-        message += f"• Service: {reservation_data.get('service', 'N/A')}\n"
-        message += f"• Staff: {reservation_data.get('staff', 'N/A')}\n"
-        message += f"• Duration: {self._get_service_duration(reservation_data.get('service', ''))} minutes\n"
-        message += f"• Price: ¥{self._get_service_price(reservation_data.get('service', '')):,}\n"
-        message += f"• Confirmed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        message += f"• <{calendar_url}|Open Calendar>"
+        message = f"✅ **新規予約確定**\n"
+        message += f"• 予約ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
+        message += f"• お客様: {client_name}\n"
+        message += f"• 日付: {reservation_data.get('date', 'N/A')}\n"
+        message += f"• 時間: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
+        message += f"• サービス: {reservation_data.get('service', 'N/A')}\n"
+        message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
+        message += f"• 所要時間: {self._get_service_duration(reservation_data.get('service', ''))}分\n"
+        message += f"• 料金: ¥{self._get_service_price(reservation_data.get('service', '')):,}\n"
+        message += f"• 確定時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        message += f"• <{calendar_url}|カレンダーを開く>"
         
         return self.send_notification(
             message=message,
-            title="📅 New Reservation",
+            title="📅 新規予約",
             color="good"
         )
     
     def notify_reservation_modification(self, old_reservation: Dict[str, Any], new_reservation: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is modified"""
         calendar_url = self._get_calendar_url()
-        message = f"🔄 **Reservation Modified**\n"
-        message += f"• Reservation ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
-        message += f"• Client: {client_name}\n"
-        message += f"• Modified at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        message = f"🔄 **予約変更**\n"
+        message += f"• 予約ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
+        message += f"• お客様: {client_name}\n"
+        message += f"• 変更時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         # Show changes
         changes = []
         
         # Date change
         if old_reservation.get('date') != new_reservation.get('date'):
-            changes.append(f"📅 Date: {old_reservation.get('date', 'N/A')} → {new_reservation.get('date', 'N/A')}")
+            changes.append(f"📅 日付: {old_reservation.get('date', 'N/A')} → {new_reservation.get('date', 'N/A')}")
         
         # Time change
         old_time = f"{old_reservation.get('start_time', 'N/A')}~{old_reservation.get('end_time', 'N/A')}"
         new_time = f"{new_reservation.get('start_time', 'N/A')}~{new_reservation.get('end_time', 'N/A')}"
         if old_time != new_time:
-            changes.append(f"⏰ Time: {old_time} → {new_time}")
+            changes.append(f"⏰ 時間: {old_time} → {new_time}")
         
         # Service change
         if old_reservation.get('service') != new_reservation.get('service'):
-            changes.append(f"💇 Service: {old_reservation.get('service', 'N/A')} → {new_reservation.get('service', 'N/A')}")
+            changes.append(f"💇 サービス: {old_reservation.get('service', 'N/A')} → {new_reservation.get('service', 'N/A')}")
         
         # Staff change
         if old_reservation.get('staff') != new_reservation.get('staff'):
-            changes.append(f"👨‍💼 Staff: {old_reservation.get('staff', 'N/A')} → {new_reservation.get('staff', 'N/A')}")
+            changes.append(f"👨‍💼 担当者: {old_reservation.get('staff', 'N/A')} → {new_reservation.get('staff', 'N/A')}")
         
         if changes:
-            message += "**Changes:**\n" + "\n".join(f"• {change}" for change in changes)
+            message += "**変更内容:**\n" + "\n".join(f"• {change}" for change in changes)
         else:
-            message += "• No changes detected"
+            message += "• 変更は検出されませんでした"
         
-        message += f"\n• <{calendar_url}|Open Calendar>"
+        message += f"\n• <{calendar_url}|カレンダーを開く>"
         
         return self.send_notification(
             message=message,
-            title="✏️ Reservation Modified",
+            title="✏️ 予約変更",
             color="warning"
         )
     
     def notify_reservation_cancellation(self, reservation_data: Dict[str, Any], client_name: str) -> bool:
         """Send notification when reservation is cancelled"""
         calendar_url = self._get_calendar_url()
-        message = f"❌ **Reservation Cancelled**\n"
-        message += f"• Reservation ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
-        message += f"• Client: {client_name}\n"
-        message += f"• Date: {reservation_data.get('date', 'N/A')}\n"
-        message += f"• Time: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
-        message += f"• Service: {reservation_data.get('service', 'N/A')}\n"
-        message += f"• Staff: {reservation_data.get('staff', 'N/A')}\n"
-        message += f"• Cancelled at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        message += f"• <{calendar_url}|Open Calendar>"
+        message = f"❌ **予約キャンセル**\n"
+        message += f"• 予約ID: `{reservation_data.get('reservation_id', 'N/A')}`\n"
+        message += f"• お客様: {client_name}\n"
+        message += f"• 日付: {reservation_data.get('date', 'N/A')}\n"
+        message += f"• 時間: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
+        message += f"• サービス: {reservation_data.get('service', 'N/A')}\n"
+        message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
+        message += f"• キャンセル時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        message += f"• <{calendar_url}|カレンダーを開く>"
         
         return self.send_notification(
             message=message,
-            title="🚫 Reservation Cancelled",
+            title="🚫 予約キャンセル",
             color="danger"
         )
     
