@@ -68,7 +68,8 @@ class RAGFAQ:
                 'item': item,
                 'keywords': keywords,
                 'question': question,
-                'answer_template': answer_template
+                'answer_template': answer_template,
+                'category': item.get('category', '')
             })
     
     def _extract_keywords(self, text: str) -> List[str]:
@@ -100,7 +101,11 @@ class RAGFAQ:
             '休み': ['定休日', '休業日'],
             'カット': ['ヘアカット', 'カット'],
             'カラー': ['ヘアカラー', 'カラー'],
-            'パーマ': ['ヘアパーマ', 'パーマ']
+            'パーマ': ['ヘアパーマ', 'パーマ'],
+            'キャンセル': ['キャンセル料', 'キャンセル料金', 'キャンセル費用', '取消', '取り消し'],
+            '料': ['料金', '費用', '代金'],
+            '支払い': ['支払', '支払方法', '支払い方法', '決済'],
+            '方法': ['仕方', 'やり方', '手順']
         }
         
         expanded = set(keywords)
@@ -134,6 +139,12 @@ class RAGFAQ:
         best_score = 0
         
         for index_item in self.keyword_index:
+            # Skip questions in "答えないテスト" category unless it's an exact match
+            if index_item.get('category') == '（答えないテスト）':
+                # Only allow exact matches for dangerous questions
+                if query_lower.strip('？?') != index_item['question'].lower().strip('？?'):
+                    continue
+            
             # Calculate improved keyword overlap score
             overlap = len(set(query_keywords) & set(index_item['keywords']))
             
@@ -143,13 +154,19 @@ class RAGFAQ:
             if min_length > 0:
                 score = overlap / min_length
                 
-                # Bonus for direct text matches
-                if any(keyword in index_item['question'] for keyword in query_keywords):
-                    score += 0.3
+                # Check for exact question match first
+                is_exact_match = query_lower.strip('？?') == index_item['question'].lower().strip('？?')
                 
-                # Bonus for exact question match
-                if query_lower.strip('？?') == index_item['question'].lower().strip('？?'):
+                if is_exact_match:
                     score = 1.0
+                else:
+                    # Bonus for direct text matches (only for non-exact matches)
+                    if any(keyword in index_item['question'] for keyword in query_keywords):
+                        score += 0.3
+                
+                # Penalty for dangerous categories (only if not exact match)
+                if index_item.get('category') == '（答えないテスト）' and not is_exact_match:
+                    score *= 0.1  # Heavy penalty for non-exact matches
                 
                 if score > best_score:
                     best_score = score

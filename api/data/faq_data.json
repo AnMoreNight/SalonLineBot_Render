@@ -395,8 +395,8 @@
     "id": 57,
     "category": "予約・変更・キャンセル",
     "question": "キャンセルは可能ですか？",
-    "answer_template": "可能です。来店［2時間前］まで無料、それ以降は［規定に従い料金が発生］します。",
-    "required_elements": ["キャンセル条件"]
+    "answer_template": "可能です。{CANCEL_POLICY}です。",
+    "required_elements": ["CANCEL_POLICY"]
   },
   {
     "id": 58,
