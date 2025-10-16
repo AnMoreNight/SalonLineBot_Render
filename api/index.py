@@ -313,6 +313,22 @@ def handle_follow(event: FollowEvent):
     except Exception as e:
         logging.error(f"Failed to send user login notification: {e}")
     
+    # Save user data to Users sheet
+    try:
+        from api.google_sheets_logger import GoogleSheetsLogger
+        sheets_logger = GoogleSheetsLogger()
+        
+        # In LINE Bot API, user_id is the same as LINE ID
+        # Phone number is not available from LINE profile API
+        sheets_logger.log_new_user(
+            user_id=user_id, 
+            display_name=user_name,
+            phone_number=""  # Not available from LINE API
+        )
+        logging.info(f"Saved user data to Users sheet: {user_name} ({user_id})")
+    except Exception as e:
+        logging.error(f"Failed to save user data to Users sheet: {e}")
+    
     # Send consent button to the user
     try:
         consent_message = f"""こんにちは！{user_name}さん

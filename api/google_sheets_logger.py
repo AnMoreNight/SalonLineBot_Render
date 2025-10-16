@@ -20,6 +20,7 @@ class GoogleSheetsLogger:
     def __init__(self):
         self.message_worksheet = None  # For message logging (Sheet1)
         self.reservations_worksheet = None  # For reservation data (Reservations sheet)
+        self.users_worksheet = None  # For user data (Users sheet)
         self._setup_connection()
     
     def _setup_connection(self):
@@ -65,13 +66,17 @@ class GoogleSheetsLogger:
             # Setup reservations worksheet (separate sheet)
             self.reservations_worksheet = self._get_reservations_worksheet()
             
+            # Setup users worksheet (separate sheet)
+            self.users_worksheet = self._get_users_worksheet()
+            
             logging.info("Google Sheets logger initialized successfully")
-            logging.info("Message logging: Sheet1, Reservation data: Reservations sheet")
+            logging.info("Message logging: Sheet1, Reservation data: Reservations sheet, User data: Users sheet")
             
         except Exception as e:
             logging.error(f"Failed to setup Google Sheets connection: {e}")
             self.message_worksheet = None
             self.reservations_worksheet = None
+            self.users_worksheet = None
     
     def _setup_message_headers(self):
         """Setup column headers for message logging in Sheet1"""
@@ -248,6 +253,68 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Failed to get reservations worksheet: {e}")
             return None
+    
+    def _get_users_worksheet(self):
+        """Get or create the users worksheet"""
+        if self.users_worksheet:
+            return self.users_worksheet
+            
+        try:
+            load_dotenv()
+            credentials_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not credentials_json:
+                return None
+            
+            credentials_info = json.loads(credentials_json)
+            scope = [
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(
+                credentials_info, scope
+            )
+            gc = gspread.authorize(creds)
+            
+            spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
+            if not spreadsheet_id:
+                return None
+            
+            spreadsheet = gc.open_by_key(spreadsheet_id)
+            
+            # Try to get existing users worksheet
+            try:
+                users_worksheet = spreadsheet.worksheet("Users")
+            except gspread.WorksheetNotFound:
+                # Create new users worksheet
+                users_worksheet = spreadsheet.add_worksheet(
+                    title="Users", 
+                    rows=1000, 
+                    cols=10
+                )
+                # Setup headers for users
+                self._setup_users_headers(users_worksheet)
+            
+            # Store the worksheet for future use
+            self.users_worksheet = users_worksheet
+            return users_worksheet
+            
+        except Exception as e:
+            logging.error(f"Failed to get users worksheet: {e}")
+            return None
+    
+    def _setup_users_headers(self, worksheet):
+        """Setup headers for the users worksheet"""
+        headers = [
+            "Timestamp",
+            "User ID",
+            "Display Name",
+            "Phone Number",
+            "Status",
+            "Notes"
+        ]
+        worksheet.append_row(headers)
+        logging.info("Users worksheet headers set up successfully")
     
     def _setup_reservations_headers(self, worksheet):
         """Setup headers for the reservations worksheet"""
@@ -528,3 +595,77 @@ class GoogleSheetsLogger:
         except Exception as e:
             logging.error(f"Error getting user ID for reservation {reservation_id}: {e}")
             return None
+    
+    def log_new_user(self, user_id: str, display_name: str, phone_number: str = ""):
+        """Log new user data to the Users sheet"""
+        if not self.users_worksheet:
+            logging.warning("Users worksheet not available. Cannot log user data.")
+            return False
+        
+        try:
+            # Check if user already exists
+            existing_records = self.users_worksheet.get_all_records()
+            for record in existing_records:
+                if record.get('User ID') == user_id:
+                    logging.info(f"User {user_id} already exists in Users sheet")
+                    return True
+            
+            # Prepare user data
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            user_data = [
+                timestamp,
+                user_id,
+                display_name,
+                phone_number,
+                "Active",
+                "Added via LINE Bot"
+            ]
+            
+            # Add user to sheet
+            self.users_worksheet.append_row(user_data)
+            logging.info(f"Successfully logged new user: {display_name} ({user_id})")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to log user data: {e}")
+            return False
+    
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user data by user ID from Users sheet"""
+        if not self.users_worksheet:
+            return None
+        
+        try:
+            records = self.users_worksheet.get_all_records()
+            for record in records:
+                if record.get('User ID') == user_id:
+                    return record
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting user by ID {user_id}: {e}")
+            return None
+    
+    def update_user_status(self, user_id: str, status: str, notes: str = ""):
+        """Update user status in Users sheet"""
+        if not self.users_worksheet:
+            return False
+        
+        try:
+            records = self.users_worksheet.get_all_records()
+            for i, record in enumerate(records, start=2):  # Start from row 2 (skip header)
+                if record.get('User ID') == user_id:
+                    # Update status
+                    self.users_worksheet.update_cell(i, 6, status)  # Status column
+                    if notes:
+                        self.users_worksheet.update_cell(i, 7, notes)  # Notes column
+                    
+                    logging.info(f"Updated user {user_id} status to: {status}")
+                    return True
+            
+            logging.warning(f"User {user_id} not found for status update")
+            return False
+            
+        except Exception as e:
+            logging.error(f"Error updating user status: {e}")
+            return False
