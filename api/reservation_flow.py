@@ -1500,8 +1500,13 @@ class ReservationFlow:
     
     def _handle_re_reservation_confirmation(self, user_id: str, message: str) -> str:
         """Handle re-reservation confirmation - cancel current reservation and start new reservation flow"""
-        state = self.user_states[user_id]
-        reservation = state["reservation_data"]
+        state = self.user_states.get(user_id)
+        if not state:
+            return "申し訳ございません。セッションが切れました。最初からやり直してください。"
+        
+        reservation = state.get("reservation_data")
+        if not reservation:
+            return "申し訳ございません。予約データが見つかりません。最初からやり直してください。"
         
         print(f"Re-reservation confirmation - User: {user_id}, Message: '{message}'")
         
@@ -1511,9 +1516,16 @@ class ReservationFlow:
             # Cancel the current reservation
             try:
                 from api.google_sheets_logger import GoogleSheetsLogger
+                from api.notification_manager import notification_manager
+                
                 sheets_logger = GoogleSheetsLogger()
                 
                 reservation_id = reservation["reservation_id"]
+                client_name = self._get_line_display_name(user_id)
+                
+                # Ensure user_id is in reservation data for proper tracking
+                if "user_id" not in reservation:
+                    reservation["user_id"] = user_id
                 
                 # Update status in Google Sheets to "Cancelled"
                 sheets_success = sheets_logger.update_reservation_status(reservation_id, "Cancelled")
@@ -1522,13 +1534,41 @@ class ReservationFlow:
                     return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
                 
                 # Cancel the Google Calendar event
-                calendar_success = self.google_calendar.cancel_reservation_event(reservation_id)
+                calendar_success = self.google_calendar.cancel_reservation_by_id(reservation_id)
                 
                 if not calendar_success:
                     print(f"Warning: Failed to cancel calendar event for reservation {reservation_id}")
                 
+                # Log the cancellation action
+                try:
+                    sheets_logger.log_message(
+                        user_id=user_id,
+                        user_name=client_name,
+                        message_type="user_message",
+                        user_message="再予約による自動キャンセル",
+                        bot_response="予約をキャンセルして新しい予約フローを開始",
+                        action_type="cancellation",
+                        reservation_data=reservation
+                    )
+                except Exception as log_error:
+                    print(f"Warning: Failed to log cancellation action: {log_error}")
+                
+                # Send notification to manager about cancellation
+                try:
+                    notification_manager.notify_reservation_cancellation(
+                        reservation_id=reservation_id,
+                        client_name=client_name,
+                        date=reservation['date'],
+                        start_time=reservation['start_time'],
+                        end_time=reservation['end_time'],
+                        service=reservation['service'],
+                        staff=reservation['staff'],
+                        reason="再予約による自動キャンセル"
+                    )
+                except Exception as notify_error:
+                    print(f"Warning: Failed to send cancellation notification: {notify_error}")
+                
                 # Send cancellation confirmation message
-                client_name = self._get_line_display_name(user_id)
                 cancellation_message = f"""✅ **予約キャンセル完了**
 
 📋 **キャンセルされた予約内容：**
