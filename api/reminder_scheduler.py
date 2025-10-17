@@ -72,7 +72,11 @@ class ReminderScheduler:
         # Load reminder time from kb.json
         kb_data = self._load_kb_data()
         remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
-        
+        from datetime import datetime
+        import pytz
+        tokyo_tz = pytz.timezone('Asia/Tokyo')
+        current_tokyo_time = datetime.now(tokyo_tz)
+        logging.info(f"Current time(From reminder Scheduler): {current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S')}")
         # Extract time from the string (e.g., "来店前日 09:00 自動配信" -> "09:00")
         import re
         time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
@@ -81,7 +85,7 @@ class ReminderScheduler:
         else:
             schedule_time = "09:00"  # Default fallback
             logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
-        
+        logging.log("schedule time:", schedule_time)
         # Schedule reminders at the configured time
         schedule.every().day.at(schedule_time).do(self._run_reminders)
         

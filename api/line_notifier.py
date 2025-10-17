@@ -107,8 +107,7 @@ class LineNotifier:
         """Send notification when user logs in"""
         message = f"👤 **ユーザーログイン**\n"
         message += f"• ユーザーID: `{user_id}`\n"
-        message += f"• 表示名: {display_name}\n"
-        message += f"• 時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"• 表示名: {display_name}"
         
         return self.send_notification(
             message=message,
@@ -126,8 +125,7 @@ class LineNotifier:
         message += f"• サービス: {reservation_data.get('service', 'N/A')}\n"
         message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
         message += f"• 所要時間: {self._get_service_duration(reservation_data.get('service', ''))}分\n"
-        message += f"• 料金: ¥{self._get_service_price(reservation_data.get('service', '')):,}\n"
-        message += f"• 確定時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"• 料金: ¥{self._get_service_price(reservation_data.get('service', '')):,}"
         
         return self.send_notification(
             message=message,
@@ -140,8 +138,7 @@ class LineNotifier:
         calendar_url = self._get_calendar_url()
         message = f"🔄 **予約変更**\n"
         message += f"• 予約ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
-        message += f"• お客様: {client_name}\n"
-        message += f"• 変更時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        message += f"• お客様: {client_name}\n\n"
         
         # Show changes
         changes = []
@@ -184,8 +181,7 @@ class LineNotifier:
         message += f"• 日付: {reservation_data.get('date', 'N/A')}\n"
         message += f"• 時間: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
         message += f"• サービス: {reservation_data.get('service', 'N/A')}\n"
-        message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
-        message += f"• キャンセル時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"• 担当者: {reservation_data.get('staff', 'N/A')}"
         
         return self.send_notification(
             message=message,

@@ -393,8 +393,8 @@ class ReservationFlow:
 
 {chr(10).join(period_strings)}
 
-ご希望の開始時間と終了時間をお送りください。
-例）10:00~11:00 または 10:00 11:00
+ご希望の開始時間をお送りください。
+例）10:00 または 10:30
 
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
     
@@ -476,22 +476,19 @@ class ReservationFlow:
         available_slots = self._get_available_slots(selected_date, staff_name)
         available_periods = [slot for slot in available_slots if slot["available"]]
 
-        # Parse start and end times from user input
-        start_time, end_time = self._parse_time_range(message.strip())
+        # Parse start time from user input (only start time needed now)
+        start_time = self._parse_single_time(message.strip())
         
-        # Store original end time for potential adjustment message
-        self.user_states[user_id]["data"]["original_end_time"] = end_time
-        
-        if not start_time or not end_time:
+        if not start_time:
             return """時間の入力形式が正しくありません。
 
 正しい入力例：
-・10:00~11:00
-・10:00 11:00
-・10時~11時
-・10時 11時
+・10:00
+・10:30
+・10時
+・10時30分
 
-上記の空き時間からお選びください。
+上記の空き時間から開始時間をお選びください。
 
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
 
@@ -500,32 +497,12 @@ class ReservationFlow:
         if not is_valid_time:
             return time_error_message
 
-        # Validate that start time is before end time
-        if start_time >= end_time:
-            # Return to time selection with error message
-            self.user_states[user_id]["step"] = "time_selection"
-            
-            # Get available periods again for display
-            available_slots = self._get_available_slots(selected_date, staff_name)
-            available_periods = [slot for slot in available_slots if slot["available"]]
-            
-            period_strings = []
-            for period in available_periods:
-                period_start = period["time"]
-                period_end = period["end_time"]
-                period_strings.append(f"・{period_start}~{period_end}")
-            
-            return f"""申し訳ございませんが、開始時間（{start_time}）が終了時間（{end_time}）より遅いか同じです。
-
-{selected_date}の空いている時間帯は以下の通りです：
-
-{chr(10).join(period_strings)}
-
-開始時間は終了時間より早い時間を選択してください。
-
-例）10:00~11:00（開始時間 < 終了時間）
-
-❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
+        # Calculate end time based on service duration
+        service = self.user_states[user_id]["data"]["service"]
+        service_info = self.services.get(service, {})
+        required_duration = service_info.get("duration", 60)  # Default to 60 minutes
+        
+        end_time = self._calculate_optimal_end_time(start_time, required_duration)
 
         # Validate that the time range falls within available periods
         is_valid_range = False
@@ -539,60 +516,9 @@ class ReservationFlow:
                 break
         
         if not is_valid_range:
-            return f"""申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。
+            return f"""申し訳ございませんが、{start_time}から{required_duration}分の予約は空いていません。
 
-❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
-        
-        # Validate that the selected time period is sufficient for the service
-        service = self.user_states[user_id]["data"]["service"]
-        service_info = self.services.get(service, {})
-        required_duration = service_info.get("duration", 60)  # Default to 60 minutes
-        
-        selected_duration = self._calculate_time_duration_minutes(start_time, end_time)
-        
-        # If selected duration is longer than required, automatically adjust end time
-        if selected_duration > required_duration:
-            optimal_end_time = self._calculate_optimal_end_time(start_time, required_duration)
-            
-            # Check if the optimal end time is still within available periods
-            is_optimal_valid = False
-            for period in available_periods:
-                period_start = period["time"]
-                period_end = period["end_time"]
-                
-                if period_start <= start_time and optimal_end_time <= period_end:
-                    is_optimal_valid = True
-                    break
-            
-            if is_optimal_valid:
-                # Use the optimal end time
-                end_time = optimal_end_time
-                selected_duration = required_duration
-            # If optimal end time is not available, continue with original validation
-        
-        if selected_duration < required_duration:
-            # Return to time selection with error message
-            self.user_states[user_id]["step"] = "time_selection"
-            
-            # Get available periods again for display
-            available_slots = self._get_available_slots(selected_date, staff_name)
-            available_periods = [slot for slot in available_slots if slot["available"]]
-            
-            period_strings = []
-            for period in available_periods:
-                period_start = period["time"]
-                period_end = period["end_time"]
-                period_strings.append(f"・{period_start}~{period_end}")
-            
-            return f"""申し訳ございませんが、選択された時間（{selected_duration}分）では{service}（{required_duration}分）のサービスが完了できません。
-
-{selected_date}の空いている時間帯は以下の通りです：
-
-{chr(10).join(period_strings)}
-
-{service}には最低{required_duration}分必要です。上記の空き時間から{required_duration}分以上の時間を選択してください。
-
-例）{required_duration}分以上の時間帯を選択
+上記の空き時間からお選びください。
 
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
@@ -1306,6 +1232,39 @@ class ReservationFlow:
         
         return None, None
 
+    def _parse_single_time(self, text: str) -> str:
+        """Parse a single time from user input.
+        Returns time in HH:MM format, or None if invalid.
+        Supports various time formats including single/double digit hours and Japanese format.
+        """
+        text = text.strip()
+        
+        # Pattern 1: "10:00" or "9:30" (standard format)
+        match = re.search(r'^(\d{1,2}:\d{2})$', text)
+        if match:
+            return self._normalize_time_format(match.group(1))
+        
+        # Pattern 2: "10" or "9" (hour only, assumes :00 minutes)
+        match = re.search(r'^(\d{1,2})$', text)
+        if match:
+            hour = match.group(1)
+            return self._normalize_time_format(f"{hour}:00")
+        
+        # Pattern 3: "10時" or "9時" (Japanese format, hour only)
+        match = re.search(r'^(\d{1,2})時$', text)
+        if match:
+            hour = match.group(1)
+            return self._normalize_time_format(f"{hour}:00")
+        
+        # Pattern 4: "10時30分" or "9時15分" (Japanese format with minutes)
+        match = re.search(r'^(\d{1,2})時(\d{1,2})分$', text)
+        if match:
+            hour = match.group(1)
+            minute = match.group(2)
+            return self._normalize_time_format(f"{hour}:{minute}")
+        
+        return None
+
     def _handle_modify_request(self, user_id: str, message: str) -> str:
         """Handle comprehensive reservation modification with enhanced features"""
         state = self.user_states.get(user_id)
@@ -1636,8 +1595,8 @@ class ReservationFlow:
         return f"""📅 {date} の利用可能な時間：
 {chr(10).join(time_options)}
 
-新しい時間を「開始時間~終了時間」の形式で入力してください。
-例）13:00~14:00
+新しい開始時間を入力してください。
+例）13:00 または 13:30
 
 💡 現在の予約時間も選択可能です（変更なしの確認）"""
     
@@ -1647,13 +1606,34 @@ class ReservationFlow:
         reservation = state["reservation_data"]
         selected_date = state["selected_date"]
         
+        # Parse start time from user input
+        start_time = self._parse_single_time(message.strip())
+        
+        if not start_time:
+            return """時間の入力形式が正しくありません。
+
+正しい入力例：
+・13:00
+・13:30
+・13時
+・13時30分
+
+上記の空き時間から開始時間をお選びください。"""
+        
+        # Calculate end time based on service duration
+        service = reservation.get("service", "")
+        service_info = self.services.get(service, {})
+        required_duration = service_info.get("duration", 60)  # Default to 60 minutes
+        
+        end_time = self._calculate_optimal_end_time(start_time, required_duration)
+        
         # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "time"
         self.user_states[user_id]["step"] = "modify_confirm"
         self.user_states[user_id]["pending_modification"] = {
             "type": "time",
             "new_date": selected_date,
-            "new_time": message
+            "new_time": f"{start_time}~{end_time}"
         }
         
         # Show confirmation message
@@ -1661,7 +1641,7 @@ class ReservationFlow:
 
 📅 変更内容：
 • 日付：{selected_date}
-• 時間：{message}
+• 時間：{start_time}~{end_time}（{required_duration}分）
 
 この内容で変更を確定しますか？
 

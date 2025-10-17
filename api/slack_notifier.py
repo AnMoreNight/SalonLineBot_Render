@@ -94,7 +94,6 @@ class SlackNotifier:
         message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
         message += f"• 所要時間: {self._get_service_duration(reservation_data.get('service', ''))}分\n"
         message += f"• 料金: ¥{self._get_service_price(reservation_data.get('service', '')):,}\n"
-        message += f"• 確定時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         message += f"• <{calendar_url}|カレンダーを開く>"
         
         return self.send_notification(
@@ -108,8 +107,7 @@ class SlackNotifier:
         calendar_url = self._get_calendar_url()
         message = f"🔄 **予約変更**\n"
         message += f"• 予約ID: `{old_reservation.get('reservation_id', 'N/A')}`\n"
-        message += f"• お客様: {client_name}\n"
-        message += f"• 変更時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        message += f"• お客様: {client_name}\n\n"
         
         # Show changes
         changes = []
@@ -155,7 +153,6 @@ class SlackNotifier:
         message += f"• 時間: {reservation_data.get('start_time', 'N/A')}~{reservation_data.get('end_time', 'N/A')}\n"
         message += f"• サービス: {reservation_data.get('service', 'N/A')}\n"
         message += f"• 担当者: {reservation_data.get('staff', 'N/A')}\n"
-        message += f"• キャンセル時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         message += f"• <{calendar_url}|カレンダーを開く>"
         
         return self.send_notification(
