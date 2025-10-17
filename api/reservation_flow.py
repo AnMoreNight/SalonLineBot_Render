@@ -138,7 +138,7 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
             # If user is in cancel or modify flow, continue the flow regardless of message type
-            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm"]:
+            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
                 logging.info(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
                 return intent
@@ -1319,7 +1319,7 @@ class ReservationFlow:
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Step 1: Start modification flow - show user's reservations
-        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm"]:
+        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select"]:
             self.user_states[user_id] = {"step": "modify_select_reservation"}
             return self._show_user_reservations_for_modification(user_id)
         
@@ -1344,7 +1344,15 @@ class ReservationFlow:
         elif state.get("step") == "modify_time_select":
             return self._handle_time_selection_for_modification(user_id, message)
         
-        # Step 7: Handle confirmation
+        # Step 7: Handle staff selection for modification
+        elif state.get("step") == "modify_staff_select":
+            return self._handle_staff_selection_for_modification(user_id, message)
+        
+        # Step 8: Handle service selection for modification
+        elif state.get("step") == "modify_service_select":
+            return self._handle_service_selection_for_modification(user_id, message)
+        
+        # Step 9: Handle confirmation
         elif state.get("step") == "modify_confirm":
             return self._handle_modification_confirmation(user_id, message)
         
@@ -1665,37 +1673,80 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Store modification type and pending modification
-        self.user_states[user_id]["modification_type"] = "service"
-        self.user_states[user_id]["step"] = "modify_confirm"
-        self.user_states[user_id]["pending_modification"] = {
-            "type": "service",
-            "new_service": message
-        }
+        # Show available services as candidates (excluding current service)
+        current_service = reservation['service']
+        available_services = [service for service in self.services.keys() if service != current_service]
+        service_list = "\n".join([f"• {service}" for service in available_services])
         
-        # Show confirmation message
-        return f"""サービス変更の確認
+        # Update user state to wait for service selection
+        self.user_states[user_id]["step"] = "modify_service_select"
+        
+        return f"""サービスを選択してください
 
-📅 変更内容：
-• 現在のサービス：{reservation['service']} ({reservation['duration']}分)
-• 新しいサービス：{message}
+📋 利用可能なサービス：
+{service_list}
 
-この内容で変更を確定しますか？
-
-「はい」または「確定」で変更を確定
-「キャンセル」で変更を中止"""
+上記からサービス名を入力してください。"""
     
     def _handle_staff_modification(self, user_id: str, message: str) -> str:
         """Handle staff modification"""
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
+        # Show available staff members as candidates (excluding current staff)
+        current_staff = reservation['staff']
+        available_staff = [staff for staff in self.staff_members.keys() if staff != current_staff]
+        staff_list = "\n".join([f"• {staff}" for staff in available_staff])
+        
+        # Update user state to wait for staff selection
+        self.user_states[user_id]["step"] = "modify_staff_select"
+        
+        return f"""担当者を選択してください
+
+📋 利用可能な担当者：
+{staff_list}
+
+上記から担当者名を入力してください。"""
+    
+    def _handle_staff_selection_for_modification(self, user_id: str, message: str) -> str:
+        """Handle staff selection for modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Normalize and validate staff
+        message_normalized = message.strip()
+        new_staff = None
+        
+        # Try exact match first
+        if message_normalized in self.staff_members:
+            new_staff = message_normalized
+        else:
+            # Try case-insensitive match
+            for staff_name in self.staff_members.keys():
+                if staff_name.lower() == message_normalized.lower():
+                    new_staff = staff_name
+                    break
+            
+            # Try partial match (if user types part of the staff name)
+            if not new_staff:
+                for staff_name in self.staff_members.keys():
+                    if message_normalized in staff_name or staff_name in message_normalized:
+                        new_staff = staff_name
+                        break
+        
+        if not new_staff:
+            # Show available staff excluding current staff
+            current_staff = reservation['staff']
+            available_staff = [staff for staff in self.staff_members.keys() if staff != current_staff]
+            available_staff_str = "、".join(available_staff)
+            return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff_str}\n\n上記から選択してください。"
+        
         # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "staff"
         self.user_states[user_id]["step"] = "modify_confirm"
         self.user_states[user_id]["pending_modification"] = {
             "type": "staff",
-            "new_staff": message
+            "new_staff": new_staff
         }
         
         # Show confirmation message
@@ -1703,7 +1754,60 @@ class ReservationFlow:
 
 📅 変更内容：
 • 現在の担当：{reservation['staff']}
-• 新しい担当：{message}
+• 新しい担当：{new_staff}
+
+この内容で変更を確定しますか？
+
+「はい」または「確定」で変更を確定
+「キャンセル」で変更を中止"""
+    
+    def _handle_service_selection_for_modification(self, user_id: str, message: str) -> str:
+        """Handle service selection for modification"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Normalize and validate service
+        message_normalized = message.strip()
+        new_service = None
+        
+        # Try exact match first
+        if message_normalized in self.services:
+            new_service = message_normalized
+        else:
+            # Try case-insensitive match
+            for service_name in self.services.keys():
+                if service_name.lower() == message_normalized.lower():
+                    new_service = service_name
+                    break
+            
+            # Try partial match (if user types part of the service name)
+            if not new_service:
+                for service_name in self.services.keys():
+                    if message_normalized in service_name or service_name in message_normalized:
+                        new_service = service_name
+                        break
+        
+        if not new_service:
+            # Show available services excluding current service
+            current_service = reservation['service']
+            available_services = [service for service in self.services.keys() if service != current_service]
+            available_services_str = "、".join(available_services)
+            return f"申し訳ございませんが、そのサービスは選択できません。\n\n利用可能なサービス：\n{available_services_str}\n\n上記から選択してください。"
+        
+        # Store modification type and pending modification
+        self.user_states[user_id]["modification_type"] = "service"
+        self.user_states[user_id]["step"] = "modify_confirm"
+        self.user_states[user_id]["pending_modification"] = {
+            "type": "service",
+            "new_service": new_service
+        }
+        
+        # Show confirmation message
+        return f"""サービス変更の確認
+
+📅 変更内容：
+• 現在のサービス：{reservation['service']} ({reservation['duration']}分)
+• 新しいサービス：{new_service}
 
 この内容で変更を確定しますか？
 

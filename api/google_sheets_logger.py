@@ -60,7 +60,30 @@ class GoogleSheetsLogger:
             
             # Setup message logging worksheet (Sheet1)
             self.message_worksheet = spreadsheet.sheet1
-            if not self.message_worksheet.get_all_records():
+            
+            # Define expected headers to avoid duplicate header issues
+            expected_headers = [
+                "Timestamp",
+                "User ID",
+                "User Name", 
+                "Message Type",
+                "User Message",
+                "Bot Response",
+                "Action Type",
+                "Reservation Data",
+                "KB Category",
+                "Processing Time (ms)"
+            ]
+            
+            try:
+                # Try to get records with expected headers
+                records = self.message_worksheet.get_all_records(expected_headers=expected_headers)
+                if not records:
+                    self._setup_message_headers()
+            except Exception as header_error:
+                logging.warning(f"Header issue detected, attempting to fix: {header_error}")
+                # Clear the worksheet and reset headers
+                self.message_worksheet.clear()
                 self._setup_message_headers()
             
             # Setup reservations worksheet (separate sheet)
