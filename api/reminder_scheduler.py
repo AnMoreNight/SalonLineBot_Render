@@ -85,7 +85,7 @@ class ReminderScheduler:
         else:
             schedule_time = "09:00"  # Default fallback
             logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
-        logging.log("schedule time:", schedule_time)
+        logging.info("schedule time:", schedule_time)
         # Schedule reminders at the configured time
         schedule.every().day.at(schedule_time).do(self._run_reminders)
         
