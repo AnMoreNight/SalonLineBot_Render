@@ -1,140 +1,100 @@
-# Salon Line Bot
+# SalonAI LINE Bot
 
-A LINE bot for salon reservations with AI-powered FAQ responses using RAG (Retrieval-Augmented Generation) and ChatGPT integration.
+A comprehensive LINE bot for salon reservations with AI-powered FAQ responses, Google Calendar integration, and automated reminder system.
 
-## Features
+## 📚 Documentation
 
-- LINE Bot integration for customer interactions
-- AI-powered FAQ responses using RAG and ChatGPT
-- Google Calendar integration for reservations
-- Google Sheets logging for all bot interactions
-- Reservation flow management
-- Natural language processing for customer queries
+### English Documentation
 
-## Deployment on Render
+**[📖 Complete English Documentation](README_EN.md)**
+
+- Full setup and deployment guide
+- Feature documentation
+- API reference
+- Troubleshooting guide
+
+### Japanese Documentation
+
+**[📖 完全な日本語ドキュメント](README_JP.md)**
+
+- セットアップとデプロイメントガイド
+- 機能ドキュメント
+- APIリファレンス
+- トラブルシューティングガイド
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-1. GitHub repository with this code
-2. Render account
-3. LINE Bot credentials (Channel Access Token and Channel Secret)
-4. OpenAI API key
-5. Google Calendar API credentials
-
-### Deployment Steps
-
-1. **Connect to GitHub:**
-   - Go to [Render Dashboard](https://dashboard.render.com)
-   - Click "New +" and select "Web Service"
-   - Connect your GitHub account and select this repository
-
-2. **Configure the Service:**
-   - **Name**: salon-line-bot (or your preferred name)
-   - **Environment**: Python 3
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python -m uvicorn api.index:app --host 0.0.0.0 --port $PORT`
-
-3. **Set Environment Variables:**
-   Add the following environment variables in the Render dashboard:
-   - `LINE_CHANNEL_ACCESS_TOKEN`: Your LINE Bot Channel Access Token
-   - `LINE_CHANNEL_SECRET`: Your LINE Bot Channel Secret
-   - `OPENAI_API_KEY`: Your OpenAI API key
-   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Your Google Calendar API credentials (JSON format)
-   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Your Google Sheets API service account credentials (JSON format)
-   - `GOOGLE_SHEET_ID`: Your Google Sheet ID for logging (from the sheet URL)
-
-4. **Deploy:**
-   - Click "Create Web Service"
-   - Render will automatically build and deploy your application
-
-5. **Configure LINE Webhook:**
-   - Once deployed, copy your Render service URL
-   - In LINE Developers Console, set your webhook URL to: `https://your-service-name.onrender.com/api/callback`
-
-### Google Sheets Logging Setup
-
-The bot automatically logs all interactions to Google Sheets for analytics and monitoring:
-
-1. **Create a Google Sheet:**
-   - Create a new Google Sheet for logging
-   - Copy the Sheet ID from the URL (the long string between `/d/` and `/edit`)
-
-2. **Set up Google Sheets API:**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a new project or select existing one
-   - Enable Google Sheets API
-   - Create a Service Account
-   - Download the JSON credentials file
-   - Share your Google Sheet with the service account email (found in the JSON file)
-
-3. **Configure Environment Variables:**
-   - `GOOGLE_SERVICE_ACCOUNT_JSON`: Paste the entire JSON credentials file content
-   - `GOOGLE_SHEET_ID`: The Sheet ID from step 1
-
-The bot will automatically create headers and log:
-- Timestamp, User ID, User Name, Message Type, User Message, Bot Response
-- Action Type, Reservation Data, KB Category, Processing Time
+- LINE Developer Account
+- Google Cloud Platform Account
+- OpenAI Account (optionai)
+- Render Account (or any cloud platform)
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot Channel Access Token | Yes |
-| `LINE_CHANNEL_SECRET` | LINE Bot Channel Secret | Yes |
-| `OPENAI_API_KEY` | OpenAI API key for ChatGPT integration | Yes |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Calendar API credentials (JSON format) | Yes |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Sheets API service account credentials (JSON format) | Yes |
-| `GOOGLE_SHEET_ID` | Google Sheet ID for logging interactions | Yes |
+```env
+LINE_CHANNEL_ACCESS_TOKEN=your_line_token
+LINE_CHANNEL_SECRET=your_line_secret
+GOOGLE_SERVICE_ACCOUNT_JSON={"type": "service_account", ...}
+GOOGLE_SHEET_ID=your_sheet_id
+OPENAI_API_KEY=your_openai_key
+SLACK_WEBHOOK_URL=your_slack_webhook
+NOTIFICATION_METHOD=slack/line/both
+```
 
-### Local Development
+### Deployment
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Clone repository
+2. Set environment variables
+3. Deploy to Render/Heroku/Railway
+4. Configure LINE webhook URL
 
-2. Set up environment variables in a `.env` file:
-   ```
-   LINE_CHANNEL_ACCESS_TOKEN=your_token_here
-   LINE_CHANNEL_SECRET=your_secret_here
-   OPENAI_API_KEY=your_openai_key_here
-   GOOGLE_CREDENTIALS=your_google_credentials_json
-   ```
+## ✨ Key Features
 
-3. Run the application:
-   ```bash
-   python -m uvicorn api.index:app --reload
-   ```
+- **🤖 AI-Powered FAQ**: RAG + ChatGPT integration
+- **📅 Reservation Management**: Create, modify, cancel with Google Calendar sync
+- **🔔 Multi-Platform Notifications**: Slack and LINE notifications
+- **⏰ Automated Reminders**: Daily reminder system
+- **📊 Comprehensive Logging**: Google Sheets integration
+- **👥 User Management**: Consent tracking and session management
 
-### Project Structure
+## 📁 Project Structure
 
 ```
 salonLineBot/
 ├── api/
-│   ├── index.py              # Main FastAPI application
-│   ├── asgi.py              # ASGI configuration (legacy)
-│   ├── chatgpt_faq.py       # ChatGPT FAQ integration
-│   ├── rag_faq.py           # RAG FAQ system
-│   ├── reservation_flow.py  # Reservation management
-│   ├── google_calendar.py   # Google Calendar integration
+│   ├── index.py                    # Main FastAPI application
+│   ├── reservation_flow.py         # Reservation management
+│   ├── google_calendar.py          # Google Calendar integration
+│   ├── google_sheets_logger.py     # Google Sheets logging
+│   ├── rag_faq.py                  # RAG FAQ system
+│   ├── chatgpt_faq.py              # ChatGPT integration
+│   ├── notification_manager.py     # Unified notifications
+│   ├── reminder_system.py          # Automated reminders
+│   ├── user_consent_manager.py     # User consent management
 │   └── data/
-│       ├── faq_data.json    # FAQ data
-│       └── KB.json         # Knowledge base
-├── requirements.txt         # Python dependencies
-├── render.yaml             # Render deployment configuration
-├── Procfile               # Process file for Render
-└── README.md              # This file
+│       ├── kb.json                 # Knowledge base
+│       ├── faq_data.json           # FAQ data
+│       ├── services.json           # Services and staff
+│       └── keywords.json           # Intent keywords
+├── requirements.txt                # Python dependencies
+├── Procfile                        # Process configuration
+├── README_EN.md                    # English documentation
+├── README_JP.md                    # Japanese documentation
+└── README.md                       # This file
 ```
 
-### API Endpoints
+## 🔗 API Endpoints
 
-- `GET /`: Health check endpoint
-- `POST /api/callback`: LINE Bot webhook endpoint
+- `GET /` - Health check
+- `POST /api/callback` - LINE Bot webhook
+- `POST /api/run-reminders` - Trigger reminders
+- `GET /api/reminder-status` - Check reminder status
 
-### Notes
+## 📞 Support
 
-- The application uses FastAPI with Uvicorn for the ASGI server
-- RAG system provides intelligent FAQ responses based on knowledge base
-- ChatGPT integration enhances natural language responses
-- Google Calendar integration handles reservation scheduling
-- The bot supports both FAQ queries and reservation management flows
+For detailed setup instructions, troubleshooting, and maintenance guides, please refer to the complete documentation:
+
+- **[English Documentation](README_EN.md)** - Comprehensive setup and deployment guide
+- **[Japanese Documentation](README_JP.md)** - 完全なセットアップとデプロイメントガイド
