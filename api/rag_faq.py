@@ -16,39 +16,89 @@ class RAGFAQ:
     def _load_faq_data(self, path: str) -> List[Dict[str, Any]]:
         """Load FAQ data from JSON file"""
         try:
-            # Make path relative to this module's directory
-            if not os.path.isabs(path):
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                path = os.path.join(base_dir, path.replace('api/', ''))
+            # Try multiple possible paths for different deployment environments
+            possible_paths = []
             
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            if os.path.isabs(path):
+                possible_paths.append(path)
+            else:
+                # Remove 'api/' prefix if present
+                clean_path = path.replace('api/', '')
+                
+                # Try different base directories
+                base_dirs = [
+                    os.path.dirname(os.path.abspath(__file__)),  # Current module directory
+                    os.getcwd(),  # Current working directory
+                    os.path.join(os.getcwd(), 'api'),  # api subdirectory of working directory
+                ]
+                
+                for base_dir in base_dirs:
+                    possible_paths.append(os.path.join(base_dir, clean_path))
+                    # Also try with 'api/' prefix
+                    possible_paths.append(os.path.join(base_dir, path))
+            
+            # Try each possible path
+            for full_path in possible_paths:
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except (FileNotFoundError, OSError):
+                    continue
+            
+            # If none of the paths worked, raise an error
+            raise FileNotFoundError(f"Could not find FAQ data file. Tried paths: {possible_paths}")
+            
         except Exception as e:
-            print(f"Error loading FAQ data: {e}")
+            print(f"Error loading FAQ data from {path}: {e}")
             return []
     
     def _load_kb_data(self, path: str) -> Dict[str, str]:
         """Load KB data from JSON file and convert to key-value mapping"""
         try:
-            # Make path relative to this module's directory
-            if not os.path.isabs(path):
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                path = os.path.join(base_dir, path.replace('api/', ''))
+            # Try multiple possible paths for different deployment environments
+            possible_paths = []
             
-            with open(path, 'r', encoding='utf-8') as f:
-                kb_list = json.load(f)
+            if os.path.isabs(path):
+                possible_paths.append(path)
+            else:
+                # Remove 'api/' prefix if present
+                clean_path = path.replace('api/', '')
+                
+                # Try different base directories
+                base_dirs = [
+                    os.path.dirname(os.path.abspath(__file__)),  # Current module directory
+                    os.getcwd(),  # Current working directory
+                    os.path.join(os.getcwd(), 'api'),  # api subdirectory of working directory
+                ]
+                
+                for base_dir in base_dirs:
+                    possible_paths.append(os.path.join(base_dir, clean_path))
+                    # Also try with 'api/' prefix
+                    possible_paths.append(os.path.join(base_dir, path))
             
-            # Convert list of dicts to key-value mapping
-            kb_dict = {}
-            for item in kb_list:
-                key = item.get('キー', '')
-                value = item.get('例（置換値）', '')
-                if key and value:
-                    kb_dict[key] = value
+            # Try each possible path
+            for full_path in possible_paths:
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        kb_list = json.load(f)
+                    
+                    # Convert list of dicts to key-value mapping
+                    kb_dict = {}
+                    for item in kb_list:
+                        key = item.get('キー', '')
+                        value = item.get('例（置換値）', '')
+                        if key and value:
+                            kb_dict[key] = value
+                    
+                    return kb_dict
+                except (FileNotFoundError, OSError):
+                    continue
             
-            return kb_dict
+            # If none of the paths worked, raise an error
+            raise FileNotFoundError(f"Could not find KB data file. Tried paths: {possible_paths}")
+            
         except Exception as e:
-            print(f"Error loading KB data: {e}")
+            print(f"Error loading KB data from {path}: {e}")
             return {}
     
     def _build_keyword_index(self):

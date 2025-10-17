@@ -122,20 +122,39 @@ class ReminderSystem:
     def _load_kb_data(self) -> Dict[str, str]:
         """Load data from kb.json file"""
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            kb_file = os.path.join(current_dir, "data", "kb.json")
+            # Try multiple possible paths for different deployment environments
+            possible_paths = []
             
-            with open(kb_file, 'r', encoding='utf-8') as f:
-                kb_data = json.load(f)
+            # Try different base directories
+            base_dirs = [
+                os.path.dirname(os.path.abspath(__file__)),  # Current module directory
+                os.getcwd(),  # Current working directory
+                os.path.join(os.getcwd(), 'api'),  # api subdirectory of working directory
+            ]
             
-            # Convert array format to dictionary
-            kb_dict = {}
-            for item in kb_data:
-                key = item.get('キー', '')
-                value = item.get('例（置換値）', '')
-                kb_dict[key] = value
+            for base_dir in base_dirs:
+                possible_paths.append(os.path.join(base_dir, "data", "kb.json"))
+                possible_paths.append(os.path.join(base_dir, "api", "data", "kb.json"))
             
-            return kb_dict
+            # Try each possible path
+            for kb_file in possible_paths:
+                try:
+                    with open(kb_file, 'r', encoding='utf-8') as f:
+                        kb_data = json.load(f)
+                    
+                    # Convert array format to dictionary
+                    kb_dict = {}
+                    for item in kb_data:
+                        key = item.get('キー', '')
+                        value = item.get('例（置換値）', '')
+                        kb_dict[key] = value
+                    
+                    return kb_dict
+                except (FileNotFoundError, OSError):
+                    continue
+            
+            # If none of the paths worked, raise an error
+            raise FileNotFoundError(f"Could not find kb.json file. Tried paths: {possible_paths}")
             
         except Exception as e:
             logging.error(f"Error loading kb.json: {e}")
