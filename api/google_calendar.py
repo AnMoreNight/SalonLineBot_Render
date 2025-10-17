@@ -24,6 +24,14 @@ class GoogleCalendarHelper:
         self.services_data = self._load_services_data()
         self.staff_data = self.services_data.get("staff", {})
         self.services = self.services_data.get("services", {})
+        
+        # Initialize Google Calendar service
+        self.service = None
+        try:
+            self._authenticate()
+        except Exception as e:
+            print(f"Failed to initialize Google Calendar: {e}")
+            self.service = None
     
     def _normalize_time_format(self, time_str: str) -> str:
         """Normalize time string to HH:MM format (zero-padded)"""
@@ -56,13 +64,6 @@ class GoogleCalendarHelper:
                 return None
         except (ValueError, IndexError):
             return None
-
-        self.service = None
-        try:
-            self._authenticate()
-        except Exception as e:
-            print(f"Failed to initialize Google Calendar: {e}")
-            self.service = None
     
     def _load_services_data(self) -> Dict[str, Any]:
         """Load services and staff data from JSON file"""

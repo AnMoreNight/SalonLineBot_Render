@@ -149,6 +149,17 @@ class ReservationFlow:
             # For now, we'll return "general" and let the user specify their intent
             return "general"
         
+        # Check if message is a date format (YYYY-MM-DD)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", message_normalized):
+            # Validate the date format
+            try:
+                datetime.strptime(message_normalized, "%Y-%m-%d")
+                logging.info(f"Detected date format intent for message: '{message_normalized}'")
+                return "reservation_flow"
+            except ValueError:
+                # Invalid date format (like 2025-02-29 in non-leap year), continue with other checks
+                pass
+        
         # Get keywords from JSON data
         reservation_keywords = self.intent_keywords.get("reservation", [])
         cancel_keywords = self.intent_keywords.get("cancel", [])
@@ -185,6 +196,15 @@ class ReservationFlow:
         step = state["step"]
         
         if step == "start":
+            # Check if the message is a date format - if so, start reservation and handle date
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", message_normalized):
+                try:
+                    datetime.strptime(message_normalized, "%Y-%m-%d")
+                    # Start reservation flow and immediately handle date selection
+                    self._start_reservation(user_id)
+                    return self._handle_date_selection(user_id, message)
+                except ValueError:
+                    pass
             return self._start_reservation(user_id)
         elif step == "service_selection":
             return self._handle_service_selection(user_id, message)
