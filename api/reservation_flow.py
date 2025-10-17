@@ -140,7 +140,7 @@ class ReservationFlow:
             # If user is in cancel or modify flow, continue the flow regardless of message type
             if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
-                logging.info(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
+                print(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
                 return intent
         
         # Check if message is a reservation ID format
@@ -154,7 +154,7 @@ class ReservationFlow:
             # Validate the date format
             try:
                 datetime.strptime(message_normalized, "%Y-%m-%d")
-                logging.info(f"Detected date format intent for message: '{message_normalized}'")
+                print(f"Detected date format intent for message: '{message_normalized}'")
                 return "reservation_flow"
             except ValueError:
                 # Invalid date format (like 2025-02-29 in non-leap year), continue with other checks
@@ -168,16 +168,16 @@ class ReservationFlow:
         # Priority order: modify > cancel > reservation (check specific keywords first to avoid substring issues)
         # Use 'in' operator for substring matching (works with Japanese)
         if any(keyword in message_normalized for keyword in modify_keywords):
-            logging.info(f"Detected 'modify' intent for message: '{message_normalized}'")
+            print(f"Detected 'modify' intent for message: '{message_normalized}'")
             return "modify"
         elif any(keyword in message_normalized for keyword in cancel_keywords):
-            logging.info(f"Detected 'cancel' intent for message: '{message_normalized}'")
+            print(f"Detected 'cancel' intent for message: '{message_normalized}'")
             return "cancel"
         elif any(keyword in message_normalized for keyword in reservation_keywords):
-            logging.info(f"Detected 'reservation' intent for message: '{message_normalized}'")
+            print(f"Detected 'reservation' intent for message: '{message_normalized}'")
             return "reservation"
         else:
-            logging.info(f"Detected 'general' intent for message: '{message_normalized}'")
+            print(f"Detected 'general' intent for message: '{message_normalized}'")
             return "general"
     
     def handle_reservation_flow(self, user_id: str, message: str) -> str:
@@ -639,7 +639,7 @@ class ReservationFlow:
                 
                 sheets_success = sheets_logger.save_reservation(sheet_reservation_data)
                 if sheets_success:
-                    logging.info(f"Successfully saved reservation {reservation_id} to Reservations sheet")
+                    print(f"Successfully saved reservation {reservation_id} to Reservations sheet")
                 else:
                     logging.error(f"Failed to save reservation {reservation_id} to Reservations sheet")
                     
@@ -879,7 +879,7 @@ class ReservationFlow:
             
             # Get user's reservations
             reservations = sheets_logger.get_user_reservations(client_name)
-            logging.info(f"Found {len(reservations) if reservations else 0} reservations for client: {client_name}")
+            print(f"Found {len(reservations) if reservations else 0} reservations for client: {client_name}")
             
             if not reservations:
                 return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
@@ -920,8 +920,8 @@ class ReservationFlow:
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
-                logging.info(f"Looking for reservation ID: {reservation_id}")
-                logging.info(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
+                print(f"Looking for reservation ID: {reservation_id}")
+                print(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
                 for res in reservations:
                     if res["reservation_id"] == reservation_id:
                         selected_reservation = res
@@ -1288,7 +1288,7 @@ class ReservationFlow:
         
         # Step 3: Handle field selection
         elif state.get("step") == "modify_select_field":
-            logging.info(f"Routing to field selection - User: {user_id}, Message: '{message}'")
+            print(f"Routing to field selection - User: {user_id}, Message: '{message}'")
             return self._handle_field_selection(user_id, message)
         
         # Step 4: Handle time modification date selection
@@ -1366,8 +1366,8 @@ class ReservationFlow:
                 reservation_id = message
                 # Find the reservation
                 selected_reservation = None
-                logging.info(f"Looking for reservation ID: {reservation_id}")
-                logging.info(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
+                print(f"Looking for reservation ID: {reservation_id}")
+                print(f"Available reservations: {[res['reservation_id'] for res in reservations]}")
                 for res in reservations:
                     if res["reservation_id"] == reservation_id:
                         selected_reservation = res
@@ -1441,17 +1441,17 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        logging.info(f"Field selection - User: {user_id}, Message: '{message}', State: {state}")
+        print(f"Field selection - User: {user_id}, Message: '{message}', State: {state}")
         
         # Check for numeric selection first
         if message.strip() == "1":
-            logging.info("Selected time modification (1)")
+            print("Selected time modification (1)")
             return self._handle_time_modification(user_id, message)
         elif message.strip() == "2":
-            logging.info("Selected service modification (2)")
+            print("Selected service modification (2)")
             return self._handle_service_modification(user_id, message)
         elif message.strip() == "3":
-            logging.info("Selected staff modification (3)")
+            print("Selected staff modification (3)")
             return self._handle_staff_modification(user_id, message)
         
         # Only numeric selection is supported
@@ -1548,11 +1548,11 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        logging.info(f"[Show Times] User modifying reservation:")
-        logging.info(f"  ID: {reservation.get('reservation_id', 'Unknown')}")
-        logging.info(f"  Date: {reservation.get('date', 'Unknown')}")
-        logging.info(f"  Time: {reservation.get('start_time', '?')}~{reservation.get('end_time', '?')}")
-        logging.info(f"  Service: {reservation.get('service', 'Unknown')}")
+        print(f"[Show Times] User modifying reservation:")
+        print(f"  ID: {reservation.get('reservation_id', 'Unknown')}")
+        print(f"  Date: {reservation.get('date', 'Unknown')}")
+        print(f"  Time: {reservation.get('start_time', '?')}~{reservation.get('end_time', '?')}")
+        print(f"  Service: {reservation.get('service', 'Unknown')}")
         
         # Get available slots for the date (excluding current reservation to free up that time)
         # Only consider events for the current staff member
@@ -1940,7 +1940,7 @@ class ReservationFlow:
             
             # If user input duration is different from service duration, use the correct one
             if user_duration_minutes != service_duration:
-                logging.info(f"User input duration ({user_duration_minutes}分) differs from service duration ({service_duration}分). Using service duration.")
+                print(f"User input duration ({user_duration_minutes}分) differs from service duration ({service_duration}分). Using service duration.")
                 end_time = correct_end_time
             
         except Exception as e:

@@ -23,7 +23,7 @@ class NotificationManager:
             try:
                 from api.slack_notifier import slack_notifier
                 self.slack_notifier = slack_notifier
-                logging.info("Slack notifications enabled")
+                print("Slack notifications enabled")
             except Exception as e:
                 logging.error(f"Failed to initialize Slack notifier: {e}")
         
@@ -31,7 +31,7 @@ class NotificationManager:
             try:
                 from api.line_notifier import line_notifier
                 self.line_notifier = line_notifier
-                logging.info("LINE notifications enabled")
+                print("LINE notifications enabled")
             except Exception as e:
                 logging.error(f"Failed to initialize LINE notifier: {e}")
         
@@ -41,7 +41,7 @@ class NotificationManager:
                 from api.line_notifier import line_notifier
                 self.slack_notifier = slack_notifier
                 self.line_notifier = line_notifier
-                logging.info("Both Slack and LINE notifications enabled")
+                print("Both Slack and LINE notifications enabled")
             except Exception as e:
                 logging.error(f"Failed to initialize notifiers: {e}")
         

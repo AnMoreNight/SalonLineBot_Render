@@ -19,7 +19,7 @@ class ReminderSystem:
         if not self.enabled:
             logging.warning("LINE Channel Access Token not configured. Reminder system disabled.")
         else:
-            logging.info("Reminder system enabled")
+            print("Reminder system enabled")
     
     def get_tomorrow_reservations(self) -> List[Dict[str, Any]]:
         """Get all reservations for tomorrow"""
@@ -55,7 +55,7 @@ class ReminderSystem:
             except Exception as e:
                 logging.warning(f"Could not get reservations from sheets: {e}")
             
-            logging.info(f"Found {len(reservations)} reservations for {tomorrow}")
+            print(f"Found {len(reservations)} reservations for {tomorrow}")
             return reservations
             
         except Exception as e:
@@ -140,28 +140,28 @@ class ReminderSystem:
                 possible_paths.append(os.path.join(base_dir, "api", "data", "KB.json"))
             
             # Debug: Print all attempted paths and their status
-            logging.info(f"DEBUG: Attempting to load KB data in ReminderSystem")
+            print(f"DEBUG: Attempting to load KB data in ReminderSystem")
             for kb_file in possible_paths:
                 exists = os.path.exists(kb_file)
                 is_file = os.path.isfile(kb_file) if exists else False
-                logging.info(f"DEBUG: Path: {kb_file} - Exists: {exists}, IsFile: {is_file}")
+                print(f"DEBUG: Path: {kb_file} - Exists: {exists}, IsFile: {is_file}")
             
             # Try each possible path
             for kb_file in possible_paths:
                 try:
                     if not os.path.exists(kb_file):
-                        logging.info(f"DEBUG: Path does not exist: {kb_file}")
+                        print(f"DEBUG: Path does not exist: {kb_file}")
                         continue
                     
                     if not os.path.isfile(kb_file):
-                        logging.info(f"DEBUG: Path is not a file: {kb_file}")
+                        print(f"DEBUG: Path is not a file: {kb_file}")
                         continue
                     
-                    logging.info(f"DEBUG: Attempting to open: {kb_file}")
+                    print(f"DEBUG: Attempting to open: {kb_file}")
                     with open(kb_file, 'r', encoding='utf-8') as f:
                         kb_data = json.load(f)
                     
-                    logging.info(f"DEBUG: Successfully loaded KB data from: {kb_file}")
+                    print(f"DEBUG: Successfully loaded KB data from: {kb_file}")
                     
                     # Convert array format to dictionary
                     kb_dict = {}
@@ -172,10 +172,10 @@ class ReminderSystem:
                     
                     return kb_dict
                 except (FileNotFoundError, OSError) as e:
-                    logging.info(f"DEBUG: Failed to load from {kb_file}: {e}")
+                    print(f"DEBUG: Failed to load from {kb_file}: {e}")
                     continue
                 except json.JSONDecodeError as e:
-                    logging.info(f"DEBUG: JSON decode error from {kb_file}: {e}")
+                    print(f"DEBUG: JSON decode error from {kb_file}: {e}")
                     continue
             
             # If none of the paths worked, raise an error
@@ -252,7 +252,7 @@ class ReminderSystem:
             )
             
             if response.status_code == 200:
-                logging.info(f"Reminder sent successfully to user {user_id} for reservation {reservation.get('reservation_id')}")
+                print(f"Reminder sent successfully to user {user_id} for reservation {reservation.get('reservation_id')}")
                 return True
             else:
                 logging.error(f"Failed to send reminder to user {user_id}: {response.status_code} - {response.text}")
@@ -299,7 +299,7 @@ class ReminderSystem:
     
     def run_daily_reminders(self) -> Dict[str, Any]:
         """Run daily reminder process"""
-        logging.info("Starting daily reminder process...")
+        print("Starting daily reminder process...")
         
         # Get tomorrow's reservations
         reservations = self.get_tomorrow_reservations()
@@ -329,7 +329,7 @@ class ReminderSystem:
             'failed_reservations': failed_reservations
         }
         
-        logging.info(f"Daily reminder process completed: {success_count}/{len(reservations)} sent successfully")
+        print(f"Daily reminder process completed: {success_count}/{len(reservations)} sent successfully")
         return result
 
 

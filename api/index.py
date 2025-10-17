@@ -35,7 +35,7 @@ try:
     # Set LINE configuration for reservation flow
     reservation_flow.set_line_configuration(configuration)
     
-    logging.info("All modules initialized successfully")
+    print("All modules initialized successfully")
 except Exception as e:
     logging.error(f"Failed to initialize modules: {e}")
     # Set fallback values to prevent crashes
@@ -56,7 +56,7 @@ async def startup_event():
     
     try:
         if reminder_scheduler.enabled:
-            logging.info("Starting reminder scheduler...")
+            print("Starting reminder scheduler...")
             
             # Start scheduler in a separate thread
             scheduler_thread = threading.Thread(
@@ -66,9 +66,9 @@ async def startup_event():
             )
             scheduler_thread.start()
             
-            logging.info("Reminder scheduler started successfully")
+            print("Reminder scheduler started successfully")
         else:
-            logging.info("Reminder scheduler is disabled")
+            print("Reminder scheduler is disabled")
             
     except Exception as e:
         logging.error(f"Failed to start reminder scheduler: {e}")
@@ -79,7 +79,7 @@ async def shutdown_event():
     global scheduler_thread
     
     if scheduler_thread and scheduler_thread.is_alive():
-        logging.info("Stopping reminder scheduler...")
+        print("Stopping reminder scheduler...")
         # Note: The scheduler thread will stop when the main process exits
         # since it's marked as daemon=True
 
@@ -213,7 +213,7 @@ def handle_message(event: MessageEvent):
                             action_type = "faq"
                             
                             # Log successful KB hit
-                            logging.info(f"KB hit for user {user_id}: {message_text} -> {kb_category}")
+                            print(f"KB hit for user {user_id}: {message_text} -> {kb_category}")
                         else:
                             # Step 3: No KB facts found - return standard "分かりません" response
                             reply = "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
@@ -271,11 +271,11 @@ def handle_message(event: MessageEvent):
     processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
     # Debug logging
-    logging.info(f"Attempting to log interaction - sheets_logger: {sheets_logger is not None}, action_type: {action_type}")
+    print(f"Attempting to log interaction - sheets_logger: {sheets_logger is not None}, action_type: {action_type}")
     
     if sheets_logger:
         if action_type == "reservation":
-            logging.info(f"Logging reservation action for user {user_id}")
+            print(f"Logging reservation action for user {user_id}")
             sheets_logger.log_reservation_action(
                 user_id=user_id,
                 action=action_type,
@@ -292,10 +292,10 @@ def handle_message(event: MessageEvent):
                 reservation_flow.user_states[user_id].get('step') == 'confirmation' and
                 any(keyword in message_text for keyword in ['はい', '確定', 'お願い'])):
                 del reservation_flow.user_states[user_id]
-                logging.info(f"Cleared user state for {user_id} after reservation confirmation")
+                print(f"Cleared user state for {user_id} after reservation confirmation")
                 
         elif action_type == "faq":
-            logging.info(f"Logging FAQ interaction for user {user_id}")
+            print(f"Logging FAQ interaction for user {user_id}")
             sheets_logger.log_faq_interaction(
                 user_id=user_id,
                 user_message=message_text,
@@ -305,7 +305,7 @@ def handle_message(event: MessageEvent):
                 processing_time=processing_time
             )
         else:
-            logging.info(f"Logging general message for user {user_id}")
+            print(f"Logging general message for user {user_id}")
             sheets_logger.log_message(
                 user_id=user_id,
                 user_message=message_text,
@@ -337,7 +337,7 @@ def handle_follow(event: FollowEvent):
     try:
         from api.notification_manager import send_user_login_notification
         send_user_login_notification(user_id, user_name)
-        logging.info(f"New user added bot as friend: {user_id} ({user_name})")
+        print(f"New user added bot as friend: {user_id} ({user_name})")
     except Exception as e:
         logging.error(f"Failed to send user login notification: {e}")
     
@@ -353,7 +353,7 @@ def handle_follow(event: FollowEvent):
             display_name=user_name,
             phone_number=""  # Not available from LINE API
         )
-        logging.info(f"Saved user data to Users sheet: {user_name} ({user_id})")
+        print(f"Saved user data to Users sheet: {user_name} ({user_id})")
     except Exception as e:
         logging.error(f"Failed to save user data to Users sheet: {e}")
     
@@ -442,7 +442,7 @@ def handle_consent_screen(user_id: str, user_name: str, reply_token: str):
                 )
             )
         
-        logging.info(f"Sent consent screen to user: {user_id} ({user_name})")
+        print(f"Sent consent screen to user: {user_id} ({user_name})")
         
     except Exception as e:
         logging.error(f"Failed to send consent screen: {e}")
@@ -479,7 +479,7 @@ def handle_consent_response(user_id: str, user_name: str, message_text: str, rep
             # Mark user as consented
             from api.user_consent_manager import user_consent_manager
             user_consent_manager.mark_user_consented(user_id)
-            logging.info(f"User consented: {user_id} ({user_name})")
+            print(f"User consented: {user_id} ({user_name})")
             
         elif message_text == "同意しない":
             # User declined - send goodbye message
@@ -500,7 +500,7 @@ def handle_consent_response(user_id: str, user_name: str, message_text: str, rep
                     )
                 )
             
-            logging.info(f"User declined consent: {user_id} ({user_name})")
+            print(f"User declined consent: {user_id} ({user_name})")
         
     except Exception as e:
         logging.error(f"Failed to handle consent response: {e}")

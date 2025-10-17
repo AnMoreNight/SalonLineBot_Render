@@ -99,8 +99,8 @@ class GoogleSheetsLogger:
             # Setup users worksheet (separate sheet)
             self.users_worksheet = self._get_users_worksheet()
             
-            logging.info("Google Sheets logger initialized successfully")
-            logging.info("Message logging: Sheet1, Reservation data: Reservations sheet, User data: Users sheet")
+            print("Google Sheets logger initialized successfully")
+            print("Message logging: Sheet1, Reservation data: Reservations sheet, User data: Users sheet")
             
         except Exception as e:
             logging.error(f"Failed to setup Google Sheets connection: {e}")
@@ -128,7 +128,7 @@ class GoogleSheetsLogger:
         
         try:
             self.message_worksheet.append_row(headers)
-            logging.info("Message logging headers setup completed in Sheet1")
+            print("Message logging headers setup completed in Sheet1")
         except Exception as e:
             logging.error(f"Failed to setup message headers: {e}")
     
@@ -173,7 +173,7 @@ class GoogleSheetsLogger:
             
             # Append to message logging worksheet (Sheet1)
             self.message_worksheet.append_row(row_data)
-            logging.info(f"Logged message interaction for user {user_id} to Sheet1")
+            print(f"Logged message interaction for user {user_id} to Sheet1")
             
         except Exception as e:
             logging.error(f"Failed to log message to Google Sheets: {e}")
@@ -318,7 +318,7 @@ class GoogleSheetsLogger:
                 # Check if headers are set up correctly
                 existing_records = users_worksheet.get_all_records()
                 if not existing_records or not self._has_correct_headers(existing_records):
-                    logging.info("Users worksheet exists but headers need setup")
+                    print("Users worksheet exists but headers need setup")
                     # Clear the worksheet and set up headers properly
                     users_worksheet.clear()
                     self._setup_users_headers(users_worksheet)
@@ -382,7 +382,7 @@ class GoogleSheetsLogger:
             "Last Seen"
         ]
         worksheet.append_row(headers)
-        logging.info("Users worksheet headers set up successfully")
+        print("Users worksheet headers set up successfully")
     
     def _setup_reservations_headers(self, worksheet):
         """Setup headers for the reservations worksheet"""
@@ -406,9 +406,9 @@ class GoogleSheetsLogger:
             if not existing_records:
                 # Only add headers if worksheet is empty
                 worksheet.append_row(headers)
-                logging.info("Reservations worksheet headers setup completed")
+                print("Reservations worksheet headers setup completed")
             else:
-                logging.info("Reservations worksheet headers already exist")
+                print("Reservations worksheet headers already exist")
         except Exception as e:
             logging.error(f"Failed to setup reservations headers: {e}")
     
@@ -437,7 +437,7 @@ class GoogleSheetsLogger:
             ]
             
             reservations_worksheet.append_row(row_data)
-            logging.info(f"Saved reservation {reservation_data.get('reservation_id')} to Google Sheets")
+            print(f"Saved reservation {reservation_data.get('reservation_id')} to Google Sheets")
             return True
             
         except Exception as e:
@@ -520,7 +520,7 @@ class GoogleSheetsLogger:
                 if record.get("Reservation ID") == reservation_id:
                     # Update the status in column J (10th column)
                     reservations_worksheet.update_cell(i, 10, status)
-                    logging.info(f"Updated reservation {reservation_id} status to {status}")
+                    print(f"Updated reservation {reservation_id} status to {status}")
                     return True
             
             logging.warning(f"Reservation {reservation_id} not found for status update")
@@ -602,7 +602,7 @@ class GoogleSheetsLogger:
                             column_index = expected_headers.index(field) + 1  # 1-based indexing
                             reservations_worksheet.update_cell(i, column_index, value)
                     
-                    logging.info(f"Updated reservation {reservation_id} with fields: {list(field_updates.keys())}")
+                    print(f"Updated reservation {reservation_id} with fields: {list(field_updates.keys())}")
                     return True
             
             logging.warning(f"Reservation {reservation_id} not found for data update")
@@ -680,15 +680,15 @@ class GoogleSheetsLogger:
                 return False
         
         try:
-            logging.info(f"Attempting to log new user: {display_name} ({user_id})")
+            print(f"Attempting to log new user: {display_name} ({user_id})")
             
             # Check if user already exists
             existing_records = self.users_worksheet.get_all_records()
-            logging.info(f"Found {len(existing_records)} existing records in Users sheet")
+            print(f"Found {len(existing_records)} existing records in Users sheet")
             
             for record in existing_records:
                 if record.get('User ID') == user_id:
-                    logging.info(f"User {user_id} already exists in Users sheet")
+                    print(f"User {user_id} already exists in Users sheet")
                     return True
             
             # Prepare user data
@@ -706,11 +706,11 @@ class GoogleSheetsLogger:
                 timestamp                  # Last Seen
             ]
             
-            logging.info(f"Adding user data: {user_data}")
+            print(f"Adding user data: {user_data}")
             
             # Add user to sheet
             self.users_worksheet.append_row(user_data)
-            logging.info(f"Successfully logged new user: {display_name} ({user_id})")
+            print(f"Successfully logged new user: {display_name} ({user_id})")
             return True
             
         except Exception as e:
@@ -747,7 +747,7 @@ class GoogleSheetsLogger:
                     if notes:
                         self.users_worksheet.update_cell(i, 6, notes)  # Notes column (6th)
                     
-                    logging.info(f"Updated user {user_id} status to: {status}")
+                    print(f"Updated user {user_id} status to: {status}")
                     return True
             logging.warning(f"User {user_id} not found for status update")
             return False
@@ -780,7 +780,7 @@ class GoogleSheetsLogger:
                     timestamp = self._get_tokyo_timestamp()
                     self.users_worksheet.update_cell(i, 7, "Yes")        # Consented
                     self.users_worksheet.update_cell(i, 8, timestamp)      # Consent Date
-                    logging.info(f"Marked consented in Users sheet: {user_id}")
+                    print(f"Marked consented in Users sheet: {user_id}")
                     return True
             # If not found, create a new user row first
             self.log_new_user(user_id, display_name="", phone_number="")
@@ -798,7 +798,7 @@ class GoogleSheetsLogger:
                 if record.get('User ID') == user_id:
                     self.users_worksheet.update_cell(i, 7, "No")         # Consented
                     self.users_worksheet.update_cell(i, 8, "")            # Consent Date
-                    logging.info(f"Revoked consent in Users sheet: {user_id}")
+                    print(f"Revoked consent in Users sheet: {user_id}")
                     return True
             return False
         except Exception as e:

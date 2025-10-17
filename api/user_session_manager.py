@@ -22,7 +22,7 @@ class UserSessionManager:
         """Mark a user as seen (they have interacted with the bot)"""
         try:
             self.sheets_logger.mark_user_seen(user_id)
-            logging.info(f"Marked user {user_id} as seen in Users sheet")
+            print(f"Marked user {user_id} as seen in Users sheet")
         except Exception as e:
             logging.error(f"mark_user_seen failed for {user_id}: {e}")
 

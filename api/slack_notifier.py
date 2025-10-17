@@ -18,7 +18,7 @@ class SlackNotifier:
         if not self.enabled:
             logging.warning("Slack webhook URL not configured. Notifications disabled.")
         else:
-            logging.info("Slack notifications enabled")
+            print("Slack notifications enabled")
     
     def send_notification(self, message: str, title: str = None, color: str = "good") -> bool:
         """
@@ -59,7 +59,7 @@ class SlackNotifier:
             )
             
             if response.status_code == 200:
-                logging.info("Slack notification sent successfully")
+                print("Slack notification sent successfully")
                 return True
             else:
                 logging.error(f"Failed to send Slack notification: {response.status_code} - {response.text}")

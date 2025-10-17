@@ -16,10 +16,10 @@ class ReminderScheduler:
         self.timezone = os.getenv("TIMEZONE", "Asia/Tokyo")
         
         if self.enabled:
-            logging.info("Reminder scheduler enabled")
+            print("Reminder scheduler enabled")
             self._setup_schedule()
         else:
-            logging.info("Reminder scheduler disabled")
+            print("Reminder scheduler disabled")
     
     def _load_kb_data(self):
         """Load data from kb.json file"""
@@ -76,7 +76,7 @@ class ReminderScheduler:
         import pytz
         tokyo_tz = pytz.timezone('Asia/Tokyo')
         current_tokyo_time = datetime.now(tokyo_tz)
-        logging.info(f"Current time(From reminder Scheduler): {current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Current time(From reminder Scheduler): {current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S')}")
         # Extract time from the string (e.g., "来店前日 09:00 自動配信" -> "09:00")
         import re
         time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
@@ -85,16 +85,16 @@ class ReminderScheduler:
         else:
             schedule_time = "09:00"  # Default fallback
             logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
-        logging.info("schedule time:", schedule_time)
+        print("schedule time:", schedule_time)
         # Schedule reminders at the configured time
         schedule.every().day.at(schedule_time).do(self._run_reminders)
         
-        logging.info(f"Reminder schedule set: Daily at {schedule_time} (from kb.json: {remind_time})")
+        print(f"Reminder schedule set: Daily at {schedule_time} (from kb.json: {remind_time})")
     
     def _run_reminders(self):
         """Run the daily reminder process"""
         try:
-            logging.info("Starting scheduled reminder process...")
+            print("Starting scheduled reminder process...")
             
             from api.reminder_system import reminder_system
             
@@ -102,7 +102,7 @@ class ReminderScheduler:
             result = reminder_system.run_daily_reminders()
             
             # Log the results
-            logging.info(f"Reminder process completed: {result['success_count']}/{result['total_count']} sent successfully")
+            print(f"Reminder process completed: {result['success_count']}/{result['total_count']} sent successfully")
             
             # Log any failures
             if result['failed_reservations']:
@@ -118,17 +118,17 @@ class ReminderScheduler:
     def run_scheduler(self):
         """Run the scheduler loop"""
         if not self.enabled:
-            logging.info("Scheduler is disabled, not running")
+            print("Scheduler is disabled, not running")
             return
         
-        logging.info("Starting reminder scheduler...")
+        print("Starting reminder scheduler...")
         
         while True:
             try:
                 schedule.run_pending()
                 time.sleep(60)  # Check every minute
             except KeyboardInterrupt:
-                logging.info("Scheduler stopped by user")
+                print("Scheduler stopped by user")
                 break
             except Exception as e:
                 logging.error(f"Error in scheduler loop: {e}")
@@ -136,7 +136,7 @@ class ReminderScheduler:
     
     def run_reminders_now(self):
         """Manually run reminders (for testing)"""
-        logging.info("Manually running reminders...")
+        print("Manually running reminders...")
         self._run_reminders()
     
     def get_next_run_time(self):

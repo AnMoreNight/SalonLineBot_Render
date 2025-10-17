@@ -19,7 +19,7 @@ class LineNotifier:
         if not self.enabled:
             logging.warning("LINE notification not configured. Missing LINE_CHANNEL_ACCESS_TOKEN or LINE_NOTIFICATION_USER_ID.")
         else:
-            logging.info("LINE notifications enabled")
+            print("LINE notifications enabled")
     
     def send_notification(self, message: str, title: str = None, calendar_url: str = None) -> bool:
         """
@@ -93,7 +93,7 @@ class LineNotifier:
             )
             
             if response.status_code == 200:
-                logging.info("LINE notification sent successfully")
+                print("LINE notification sent successfully")
                 return True
             else:
                 logging.error(f"Failed to send LINE notification: {response.status_code} - {response.text}")
