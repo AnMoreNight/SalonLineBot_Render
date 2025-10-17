@@ -138,7 +138,7 @@ class ReservationFlow:
             if step in ["service_selection", 'staff_selection', "date_selection", "time_selection", "confirmation"]:
                 return "reservation_flow"
             # If user is in cancel or modify flow, continue the flow regardless of message type
-            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select"]:
+            if step in ["cancel_select_reservation", "cancel_confirm", "modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select", "modify_re_reservation_confirm"]:
                 intent = step.split("_")[0]  # Return "cancel" or "modify"
                 print(f"Intent detection - User: {user_id}, Step: {step}, Intent: {intent}")
                 return intent
@@ -1279,7 +1279,7 @@ class ReservationFlow:
             return "予約変更をキャンセルいたします。またのご利用をお待ちしております。"
         
         # Step 1: Start modification flow - show user's reservations
-        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select"]:
+        if not state or state.get("step") not in ["modify_select_reservation", "modify_select_field", "modify_time_date_select", "modify_time_input_date", "modify_time_select", "modify_confirm", "modify_staff_select", "modify_service_select", "modify_re_reservation_confirm"]:
             self.user_states[user_id] = {"step": "modify_select_reservation"}
             return self._show_user_reservations_for_modification(user_id)
         
@@ -1315,6 +1315,10 @@ class ReservationFlow:
         # Step 9: Handle confirmation
         elif state.get("step") == "modify_confirm":
             return self._handle_modification_confirmation(user_id, message)
+        
+        # Step 10: Handle re-reservation confirmation
+        elif state.get("step") == "modify_re_reservation_confirm":
+            return self._handle_re_reservation_confirmation(user_id, message)
         
         return "予約変更フローに問題が発生しました。最初からやり直してください。"
     
@@ -1396,7 +1400,8 @@ class ReservationFlow:
 何を変更しますか？
 1️⃣ 日時変更したい
 2️⃣ サービス変更したい
-3️⃣ 担当者変更したい"""
+3️⃣ 担当者変更したい
+4️⃣ 複数項目変更したい（再予約）"""
                 else:
                     return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
             
@@ -1427,7 +1432,8 @@ class ReservationFlow:
 何を変更しますか？
 1️⃣ 日時変更したい
 2️⃣ サービス変更したい
-3️⃣ 担当者変更したい"""
+3️⃣ 担当者変更したい
+4️⃣ 複数項目変更したい（再予約）"""
                 else:
                     return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
             else:
@@ -1454,9 +1460,115 @@ class ReservationFlow:
         elif message.strip() == "3":
             print("Selected staff modification (3)")
             return self._handle_staff_modification(user_id, message)
+        elif message.strip() == "4":
+            print("Selected re-reservation (4)")
+            return self._handle_re_reservation(user_id, message)
         
         # Only numeric selection is supported
-        return "申し訳ございませんが、正しい番号を入力してください。\n\n1️⃣ 日時変更したい\n2️⃣ サービス変更したい\n3️⃣ 担当者変更したい"
+        return "申し訳ございませんが、正しい番号を入力してください。\n\n1️⃣ 日時変更したい\n2️⃣ サービス変更したい\n3️⃣ 担当者変更したい\n4️⃣ 複数項目変更したい（再予約）"
+    
+    def _handle_re_reservation(self, user_id: str, message: str) -> str:
+        """Handle re-reservation option - cancel current reservation and start new reservation"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        print(f"Re-reservation selected - User: {user_id}, Reservation: {reservation['reservation_id']}")
+        
+        # Set step to re-reservation confirmation
+        self.user_states[user_id]["step"] = "modify_re_reservation_confirm"
+        
+        # Show explanation and ask for confirmation
+        return f"""複数項目の変更をご希望ですね。
+
+現在の予約をキャンセルして、新しい予約を作成していただく方法をご案内いたします。
+
+📋 **現在の予約内容：**
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']}
+
+⚠️ **注意事項：**
+• 現在の予約を自動的にキャンセルいたします
+• キャンセル後、新しい予約を作成していただきます
+• 複数の項目（日時・サービス・担当者）を自由に変更できます
+
+この方法で進めてもよろしいですか？
+
+「はい」または「確定」と入力してください。
+キャンセルする場合は「キャンセル」と入力してください。"""
+    
+    def _handle_re_reservation_confirmation(self, user_id: str, message: str) -> str:
+        """Handle re-reservation confirmation - cancel current reservation and start new reservation flow"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        print(f"Re-reservation confirmation - User: {user_id}, Message: '{message}'")
+        
+        # Check for confirmation
+        message_normalized = message.strip().lower()
+        if message_normalized in ["はい", "確定", "yes", "ok"]:
+            # Cancel the current reservation
+            try:
+                from api.google_sheets_logger import GoogleSheetsLogger
+                sheets_logger = GoogleSheetsLogger()
+                
+                reservation_id = reservation["reservation_id"]
+                
+                # Update status in Google Sheets to "Cancelled"
+                sheets_success = sheets_logger.update_reservation_status(reservation_id, "Cancelled")
+                
+                if not sheets_success:
+                    return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
+                
+                # Cancel the Google Calendar event
+                calendar_success = self.google_calendar.cancel_reservation_event(reservation_id)
+                
+                if not calendar_success:
+                    print(f"Warning: Failed to cancel calendar event for reservation {reservation_id}")
+                
+                # Send cancellation confirmation message
+                client_name = self._get_line_display_name(user_id)
+                cancellation_message = f"""✅ **予約キャンセル完了**
+
+📋 **キャンセルされた予約内容：**
+🆔 予約ID：{reservation_id}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']}
+
+現在の予約をキャンセルいたしました。
+
+🆕 **新しい予約を作成いたします**
+以下の手順で新しい予約を作成してください：
+
+1️⃣ 希望のサービスを選択
+2️⃣ 担当者を選択  
+3️⃣ 日時を選択
+4️⃣ 内容を確認して確定
+
+新しい予約を作成するには「予約したい」とお送りください。"""
+                
+                # Clear the modification state and set up for new reservation
+                if user_id in self.user_states:
+                    del self.user_states[user_id]
+                
+                return cancellation_message
+                
+            except Exception as e:
+                print(f"Error in re-reservation confirmation: {e}")
+                return "申し訳ございません。処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
+        
+        # Check for cancellation
+        elif message_normalized in ["キャンセル", "cancel", "いいえ", "no"]:
+            # Clear the modification state
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+            return "再予約をキャンセルいたします。\n\n何かご不明な点がございましたら、スタッフまでお問い合わせください。"
+        
+        # Invalid response
+        else:
+            return "申し訳ございませんが、「はい」「確定」または「キャンセル」でお答えください。"
     
     def _handle_time_modification(self, user_id: str, message: str) -> str:
         """Handle time modification - ask if user wants to change date"""
