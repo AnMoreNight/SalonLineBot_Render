@@ -270,8 +270,12 @@ def handle_message(event: MessageEvent):
     # Log successful interaction to Google Sheets
     processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     
+    # Debug logging
+    logging.info(f"Attempting to log interaction - sheets_logger: {sheets_logger is not None}, action_type: {action_type}")
+    
     if sheets_logger:
         if action_type == "reservation":
+            logging.info(f"Logging reservation action for user {user_id}")
             sheets_logger.log_reservation_action(
                 user_id=user_id,
                 action=action_type,
@@ -291,6 +295,7 @@ def handle_message(event: MessageEvent):
                 logging.info(f"Cleared user state for {user_id} after reservation confirmation")
                 
         elif action_type == "faq":
+            logging.info(f"Logging FAQ interaction for user {user_id}")
             sheets_logger.log_faq_interaction(
                 user_id=user_id,
                 user_message=message_text,
@@ -300,6 +305,7 @@ def handle_message(event: MessageEvent):
                 processing_time=processing_time
             )
         else:
+            logging.info(f"Logging general message for user {user_id}")
             sheets_logger.log_message(
                 user_id=user_id,
                 user_message=message_text,
@@ -309,6 +315,8 @@ def handle_message(event: MessageEvent):
                 action_type=action_type,
                 processing_time=processing_time
             )
+    else:
+        logging.warning(f"Sheets logger is None - cannot log interaction for user {user_id}")
 
 @handler.add(FollowEvent)
 def handle_follow(event: FollowEvent):

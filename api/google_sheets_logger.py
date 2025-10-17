@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
+import pytz
 
 
 class GoogleSheetsLogger:
@@ -21,7 +22,13 @@ class GoogleSheetsLogger:
         self.message_worksheet = None  # For message logging (Sheet1)
         self.reservations_worksheet = None  # For reservation data (Reservations sheet)
         self.users_worksheet = None  # For user data (Users sheet)
+        self.tokyo_tz = pytz.timezone('Asia/Tokyo')
         self._setup_connection()
+    
+    def _get_tokyo_timestamp(self) -> str:
+        """Get current timestamp in Tokyo timezone"""
+        tokyo_time = datetime.now(self.tokyo_tz)
+        return tokyo_time.strftime("%Y-%m-%d %H:%M:%S")
     
     def _setup_connection(self):
         """Setup Google Sheets connection for both message logging and reservations"""
@@ -143,7 +150,7 @@ class GoogleSheetsLogger:
         
         try:
             # Prepare data for logging
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = self._get_tokyo_timestamp()
             
             # Convert reservation data to string if present
             reservation_str = ""
@@ -380,6 +387,7 @@ class GoogleSheetsLogger:
     def _setup_reservations_headers(self, worksheet):
         """Setup headers for the reservations worksheet"""
         headers = [
+            "Timestamp",
             "Reservation ID",
             "Client Name",
             "Date",
@@ -411,7 +419,11 @@ class GoogleSheetsLogger:
             return False
         
         try:
+            # Get Tokyo timezone timestamp
+            timestamp = self._get_tokyo_timestamp()
+            
             row_data = [
+                timestamp,  # Add timestamp as first column
                 reservation_data.get("reservation_id", ""),
                 reservation_data.get("client_name", ""),
                 reservation_data.get("date", ""),
@@ -680,7 +692,7 @@ class GoogleSheetsLogger:
                     return True
             
             # Prepare user data
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = self._get_tokyo_timestamp()
             user_data = [
                 timestamp,                 # Timestamp
                 user_id,                   # User ID
@@ -765,7 +777,7 @@ class GoogleSheetsLogger:
             records = self.users_worksheet.get_all_records()
             for i, record in enumerate(records, start=2):
                 if record.get('User ID') == user_id:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    timestamp = self._get_tokyo_timestamp()
                     self.users_worksheet.update_cell(i, 7, "Yes")        # Consented
                     self.users_worksheet.update_cell(i, 8, timestamp)      # Consent Date
                     logging.info(f"Marked consented in Users sheet: {user_id}")
@@ -809,7 +821,7 @@ class GoogleSheetsLogger:
         if not self.users_worksheet:
             return False
         try:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = self._get_tokyo_timestamp()
             records = self.users_worksheet.get_all_records()
             for i, record in enumerate(records, start=2):
                 if record.get('User ID') == user_id:
