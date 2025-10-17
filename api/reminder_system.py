@@ -22,13 +22,16 @@ class ReminderSystem:
             print("Reminder system enabled")
     
     def get_tomorrow_reservations(self) -> List[Dict[str, Any]]:
-        """Get all reservations for tomorrow"""
+        """Get all reservations for tomorrow (Tokyo timezone)"""
         try:
             from api.google_calendar import GoogleCalendarHelper
             from api.google_sheets_logger import GoogleSheetsLogger
             
-            # Get tomorrow's date
-            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            # Get tomorrow's date in Tokyo timezone
+            import pytz
+            tokyo_tz = pytz.timezone('Asia/Tokyo')
+            tomorrow = (datetime.now(tokyo_tz) + timedelta(days=1)).strftime("%Y-%m-%d")
+            print(f"Getting reservations for tomorrow: {tomorrow} (Tokyo timezone)")
             
             # Get reservations from Google Calendar
             calendar_helper = GoogleCalendarHelper()

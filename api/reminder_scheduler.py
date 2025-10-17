@@ -68,15 +68,16 @@ class ReminderScheduler:
             return {}
     
     def _setup_schedule(self):
-        """Setup the daily reminder schedule"""
+        """Setup the daily reminder schedule using Tokyo timezone"""
         # Load reminder time from kb.json
         kb_data = self._load_kb_data()
         remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
-        from datetime import datetime
+        
         import pytz
         tokyo_tz = pytz.timezone('Asia/Tokyo')
         current_tokyo_time = datetime.now(tokyo_tz)
-        print(f"Current time(From reminder Scheduler): {current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Current Tokyo time: {current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         # Extract time from the string (e.g., "来店前日 09:00 自動配信" -> "09:00")
         import re
         time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
@@ -85,11 +86,14 @@ class ReminderScheduler:
         else:
             schedule_time = "09:00"  # Default fallback
             logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
-        print("schedule time:", schedule_time)
-        # Schedule reminders at the configured time
+        
+        print(f"Schedule time: {schedule_time} (Tokyo timezone)")
+        
+        # Schedule reminders at the configured time (this will use system timezone)
+        # We need to handle timezone conversion in the scheduler loop
         schedule.every().day.at(schedule_time).do(self._run_reminders)
         
-        print(f"Reminder schedule set: Daily at {schedule_time} (from kb.json: {remind_time})")
+        print(f"Reminder schedule set: Daily at {schedule_time} Tokyo time (from kb.json: {remind_time})")
     
     def _run_reminders(self):
         """Run the daily reminder process"""
@@ -116,17 +120,49 @@ class ReminderScheduler:
             traceback.print_exc()
     
     def run_scheduler(self):
-        """Run the scheduler loop"""
+        """Run the scheduler loop with Tokyo timezone awareness"""
         if not self.enabled:
             print("Scheduler is disabled, not running")
             return
         
-        print("Starting reminder scheduler...")
+        print("Starting reminder scheduler with Tokyo timezone...")
+        
+        import pytz
+        tokyo_tz = pytz.timezone('Asia/Tokyo')
+        
+        # Get the scheduled time from kb.json
+        kb_data = self._load_kb_data()
+        remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
+        
+        # Extract time from the string
+        import re
+        time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
+        if time_match:
+            scheduled_hour = int(time_match.group(1))
+            scheduled_minute = int(time_match.group(2))
+        else:
+            scheduled_hour = 9
+            scheduled_minute = 0
+        
+        print(f"Will run reminders at {scheduled_hour:02d}:{scheduled_minute:02d} Tokyo time")
         
         while True:
             try:
-                schedule.run_pending()
-                time.sleep(60)  # Check every minute
+                # Get current Tokyo time
+                current_tokyo_time = datetime.now(tokyo_tz)
+                current_hour = current_tokyo_time.hour
+                current_minute = current_tokyo_time.minute
+                
+                # Check if it's time to run reminders (Tokyo time)
+                if current_hour == scheduled_hour and current_minute == scheduled_minute:
+                    print(f"Tokyo time {current_tokyo_time.strftime('%H:%M')} - Running reminders...")
+                    self._run_reminders()
+                    # Sleep for 60 seconds to avoid running multiple times in the same minute
+                    time.sleep(60)
+                else:
+                    # Sleep for 30 seconds and check again
+                    time.sleep(30)
+                    
             except KeyboardInterrupt:
                 print("Scheduler stopped by user")
                 break
@@ -140,27 +176,56 @@ class ReminderScheduler:
         self._run_reminders()
     
     def get_next_run_time(self):
-        """Get the next scheduled run time"""
+        """Get the next scheduled run time in Tokyo timezone"""
         if not self.enabled:
             return None
         
-        jobs = schedule.get_jobs()
-        if jobs:
-            return jobs[0].next_run
-        return None
+        # Get the scheduled time from kb.json
+        kb_data = self._load_kb_data()
+        remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
+        
+        # Extract time from the string
+        import re
+        time_match = re.search(r'(\d{2}):(\d{2})', remind_time)
+        if time_match:
+            scheduled_hour = int(time_match.group(1))
+            scheduled_minute = int(time_match.group(2))
+        else:
+            scheduled_hour = 9
+            scheduled_minute = 0
+        
+        # Calculate next run time in Tokyo timezone
+        import pytz
+        tokyo_tz = pytz.timezone('Asia/Tokyo')
+        current_tokyo_time = datetime.now(tokyo_tz)
+        
+        # Create next run time for today
+        next_run = current_tokyo_time.replace(hour=scheduled_hour, minute=scheduled_minute, second=0, microsecond=0)
+        
+        # If the time has already passed today, schedule for tomorrow
+        if next_run <= current_tokyo_time:
+            next_run += timedelta(days=1)
+        
+        return next_run
     
     def get_status(self):
-        """Get scheduler status"""
+        """Get scheduler status with Tokyo timezone information"""
         # Get configured reminder time from kb.json
         kb_data = self._load_kb_data()
         remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
         
+        # Get current Tokyo time
+        import pytz
+        tokyo_tz = pytz.timezone('Asia/Tokyo')
+        current_tokyo_time = datetime.now(tokyo_tz)
+        
         return {
             'enabled': self.enabled,
-            'timezone': self.timezone,
+            'timezone': 'Asia/Tokyo',
+            'current_tokyo_time': current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S'),
             'remind_time': remind_time,
             'next_run': self.get_next_run_time(),
-            'jobs_count': len(schedule.get_jobs())
+            'next_run_formatted': self.get_next_run_time().strftime('%Y-%m-%d %H:%M:%S') if self.get_next_run_time() else None
         }
 
 
