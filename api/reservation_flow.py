@@ -627,6 +627,7 @@ class ReservationFlow:
                 service_info = self.services.get(reservation_data['service'], {})
                 sheet_reservation_data = {
                     "reservation_id": reservation_id,
+                    "user_id": user_id,  # Add user ID for reminder system
                     "client_name": client_name,
                     "date": reservation_data['date'],
                     "start_time": reservation_data.get('start_time', reservation_data.get('time', '')),

@@ -273,10 +273,17 @@ class ReminderSystem:
             sheets_logger = GoogleSheetsLogger()
             
             reservation_id = reservation.get('reservation_id')
+            client_name = reservation.get('client_name', 'N/A')
+            
+            print(f"Looking for user ID for reservation {reservation_id} (client: {client_name})")
+            
             if reservation_id:
                 user_id = sheets_logger.get_user_id_for_reservation(reservation_id)
                 if user_id:
+                    print(f"Found user ID {user_id} for reservation {reservation_id}")
                     return user_id
+                else:
+                    print(f"No user ID found for reservation {reservation_id}")
             
             # If not found in sheets, we might need to implement a user mapping system
             # For now, return None (this would need to be enhanced based on your user tracking)
@@ -312,16 +319,21 @@ class ReminderSystem:
         
         # Send reminders to each user
         for reservation in reservations:
+            print(f"Processing reservation: {reservation.get('reservation_id')} for {reservation.get('client_name')}")
             user_id = self.get_user_id_for_reservation(reservation)
             
             if user_id:
+                print(f"Attempting to send reminder to user {user_id}")
                 if self.send_reminder_to_user(reservation, user_id):
                     success_count += 1
+                    print(f"✅ Reminder sent successfully to user {user_id}")
                 else:
                     failed_reservations.append(reservation)
+                    print(f"❌ Failed to send reminder to user {user_id}")
             else:
                 logging.warning(f"Could not find user ID for reservation {reservation.get('reservation_id')}")
                 failed_reservations.append(reservation)
+                print(f"❌ No user ID found for reservation {reservation.get('reservation_id')}")
         
         # Send notification to manager
         self.send_reminder_notification_to_manager(success_count, len(reservations), failed_reservations)

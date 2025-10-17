@@ -266,15 +266,43 @@ class GoogleSheetsLogger:
             # Try to get existing reservations worksheet
             try:
                 reservations_worksheet = spreadsheet.worksheet("Reservations")
+                print("Found existing Reservations worksheet")
+                
+                # Check and fix headers if needed
+                expected_headers = [
+                    "Timestamp",
+                    "Reservation ID", 
+                    "User ID",
+                    "Client Name",
+                    "Date",
+                    "Start Time",
+                    "End Time",
+                    "Service",
+                    "Staff",
+                    "Duration (min)",
+                    "Price",
+                    "Status"
+                ]
+                
+                try:
+                    records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
+                    if not records:
+                        self._setup_reservations_headers(reservations_worksheet)
+                except Exception as header_error:
+                    print(f"Header issue detected in Reservations sheet, attempting to fix: {header_error}")
+                    reservations_worksheet.clear()
+                    self._setup_reservations_headers(reservations_worksheet)
+                    
             except gspread.WorksheetNotFound:
                 # Create new reservations worksheet
                 reservations_worksheet = spreadsheet.add_worksheet(
                     title="Reservations", 
                     rows=1000, 
-                    cols=10
+                    cols=12
                 )
                 # Setup headers for reservations
                 self._setup_reservations_headers(reservations_worksheet)
+                print("Created new Reservations worksheet")
             
             # Store the worksheet for future use
             self.reservations_worksheet = reservations_worksheet
@@ -389,6 +417,7 @@ class GoogleSheetsLogger:
         headers = [
             "Timestamp",
             "Reservation ID",
+            "User ID",
             "Client Name",
             "Date",
             "Start Time",
@@ -425,6 +454,7 @@ class GoogleSheetsLogger:
             row_data = [
                 timestamp,  # Add timestamp as first column
                 reservation_data.get("reservation_id", ""),
+                reservation_data.get("user_id", ""),  # Add user ID column
                 reservation_data.get("client_name", ""),
                 reservation_data.get("date", ""),
                 reservation_data.get("start_time", ""),
@@ -453,7 +483,9 @@ class GoogleSheetsLogger:
         try:
             # Define expected headers to avoid duplicate header issues
             expected_headers = [
-                "Reservation ID",
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
                 "Client Name",
                 "Date",
                 "Start Time",
@@ -502,7 +534,9 @@ class GoogleSheetsLogger:
         try:
             # Define expected headers to avoid duplicate header issues
             expected_headers = [
-                "Reservation ID",
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
                 "Client Name",
                 "Date",
                 "Start Time",
@@ -518,8 +552,8 @@ class GoogleSheetsLogger:
             records = reservations_worksheet.get_all_records(expected_headers=expected_headers)
             for i, record in enumerate(records, 2):  # Start from row 2 (skip header)
                 if record.get("Reservation ID") == reservation_id:
-                    # Update the status in column J (10th column)
-                    reservations_worksheet.update_cell(i, 10, status)
+                    # Update the status in column L (12th column)
+                    reservations_worksheet.update_cell(i, 12, status)
                     print(f"Updated reservation {reservation_id} status to {status}")
                     return True
             
@@ -538,7 +572,9 @@ class GoogleSheetsLogger:
         
         try:
             expected_headers = [
-                "Reservation ID",
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
                 "Client Name",
                 "Date",
                 "Start Time",
@@ -555,6 +591,7 @@ class GoogleSheetsLogger:
                 if record.get("Reservation ID") == reservation_id:
                     return {
                         "reservation_id": record.get("Reservation ID"),
+                        "user_id": record.get("User ID"),
                         "client_name": record.get("Client Name"),
                         "date": record.get("Date"),
                         "start_time": record.get("Start Time"),
@@ -580,7 +617,9 @@ class GoogleSheetsLogger:
         
         try:
             expected_headers = [
-                "Reservation ID",
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
                 "Client Name",
                 "Date",
                 "Start Time",
@@ -619,8 +658,24 @@ class GoogleSheetsLogger:
             return []
         
         try:
-            # Get all records
-            records = self.reservations_worksheet.get_all_records()
+            # Define expected headers
+            expected_headers = [
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
+            # Get all records with expected headers
+            records = self.reservations_worksheet.get_all_records(expected_headers=expected_headers)
             
             # Filter by date
             date_reservations = []
@@ -654,13 +709,30 @@ class GoogleSheetsLogger:
             return None
         
         try:
-            # Get all records
-            records = self.reservations_worksheet.get_all_records()
+            # Define expected headers
+            expected_headers = [
+                "Timestamp",
+                "Reservation ID", 
+                "User ID",
+                "Client Name",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Service",
+                "Staff",
+                "Duration (min)",
+                "Price",
+                "Status"
+            ]
+            
+            # Get all records with expected headers
+            records = self.reservations_worksheet.get_all_records(expected_headers=expected_headers)
             
             # Find the reservation
             for record in records:
                 if record.get('Reservation ID') == reservation_id:
-                    return record.get('User ID', '')
+                    user_id = record.get('User ID', '')
+                    return user_id if user_id else None
             
             logging.warning(f"Reservation {reservation_id} not found in sheets")
             return None
