@@ -471,8 +471,6 @@ class ReservationFlow:
 正しい入力例：
 ・10:00~11:00
 ・10:00 11:00
-・10時~11時
-・10時 11時
 
 上記の空き時間からお選びください。
 
@@ -1179,38 +1177,48 @@ class ReservationFlow:
             return "申し訳ございません。キャンセル処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
 
+    def _normalize_time_format(self, time_str: str) -> str:
+        """Normalize time string to HH:MM format (zero-padded)"""
+        try:
+            # Try parsing with %H:%M first (already normalized)
+            datetime.strptime(time_str, "%H:%M")
+            return time_str
+        except ValueError:
+            try:
+                # Handle single digit hour manually
+                parts = time_str.split(':')
+                if len(parts) == 2 and len(parts[0]) == 1:
+                    # Single digit hour, pad with zero
+                    normalized = f"0{time_str}"
+                    datetime.strptime(normalized, "%H:%M")
+                    return normalized
+                else:
+                    return None
+            except ValueError:
+                return None
+
     def _parse_time_range(self, text: str) -> tuple:
         """Parse start and end times from user input.
         Returns tuple of (start_time, end_time) in HH:MM format, or (None, None) if invalid.
-        Only supports standard HH:MM format.
+        Supports both single and double digit hours.
         """
         text = text.strip()
         
-        # Pattern 1: "10:00~11:00" or "10:00～11:00"
+        # Pattern 1: "10:00~11:00" or "10:00～11:00" or "9:00~10:00"
         match = re.search(r'^(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})$', text)
         if match:
-            start_time = match.group(1)
-            end_time = match.group(2)
-            # Validate time format
-            try:
-                datetime.strptime(start_time, "%H:%M")
-                datetime.strptime(end_time, "%H:%M")
+            start_time = self._normalize_time_format(match.group(1))
+            end_time = self._normalize_time_format(match.group(2))
+            if start_time and end_time:
                 return start_time, end_time
-            except ValueError:
-                pass
         
-        # Pattern 2: "10:00 11:00" (space separated)
+        # Pattern 2: "10:00 11:00" (space separated) or "9:00 10:00"
         match = re.search(r'^(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})$', text)
         if match:
-            start_time = match.group(1)
-            end_time = match.group(2)
-            # Validate time format
-            try:
-                datetime.strptime(start_time, "%H:%M")
-                datetime.strptime(end_time, "%H:%M")
+            start_time = self._normalize_time_format(match.group(1))
+            end_time = self._normalize_time_format(match.group(2))
+            if start_time and end_time:
                 return start_time, end_time
-            except ValueError:
-                pass
         
         return None, None
 

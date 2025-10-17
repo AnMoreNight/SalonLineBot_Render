@@ -24,6 +24,26 @@ class GoogleCalendarHelper:
         self.services_data = self._load_services_data()
         self.staff_data = self.services_data.get("staff", {})
         self.services = self.services_data.get("services", {})
+    
+    def _normalize_time_format(self, time_str: str) -> str:
+        """Normalize time string to HH:MM format (zero-padded)"""
+        try:
+            # Try parsing with %H:%M first (already normalized)
+            datetime.strptime(time_str, "%H:%M")
+            return time_str
+        except ValueError:
+            try:
+                # Handle single digit hour manually
+                parts = time_str.split(':')
+                if len(parts) == 2 and len(parts[0]) == 1:
+                    # Single digit hour, pad with zero
+                    normalized = f"0{time_str}"
+                    datetime.strptime(normalized, "%H:%M")
+                    return normalized
+                else:
+                    return None
+            except ValueError:
+                return None
 
         self.service = None
         try:
@@ -315,7 +335,10 @@ class GoogleCalendarHelper:
             
             # Apply new date and time
             new_date_obj = datetime.strptime(new_date, "%Y-%m-%d")
-            new_time_obj = datetime.strptime(new_time, "%H:%M")
+            normalized_time = self._normalize_time_format(new_time)
+            if not normalized_time:
+                return False
+            new_time_obj = datetime.strptime(normalized_time, "%H:%M")
             
             # Update the datetime
             start_dt = start_dt.replace(
@@ -701,8 +724,12 @@ class GoogleCalendarHelper:
     def _calculate_slot_duration(self, slot: Dict) -> int:
         """Calculate duration of a time slot in minutes"""
         try:
-            start_time = datetime.strptime(slot["time"], "%H:%M")
-            end_time = datetime.strptime(slot["end_time"], "%H:%M")
+            normalized_start = self._normalize_time_format(slot["time"])
+            normalized_end = self._normalize_time_format(slot["end_time"])
+            if not normalized_start or not normalized_end:
+                return 0
+            start_time = datetime.strptime(normalized_start, "%H:%M")
+            end_time = datetime.strptime(normalized_end, "%H:%M")
             duration = (end_time - start_time).total_seconds() / 60
             return int(duration)
         except Exception:
@@ -716,8 +743,12 @@ class GoogleCalendarHelper:
         try:
             if "~" in time_slot:
                 start_time, end_time = time_slot.split("~")
-                start_dt = datetime.strptime(start_time.strip(), "%H:%M")
-                end_dt = datetime.strptime(end_time.strip(), "%H:%M")
+                normalized_start = self._normalize_time_format(start_time.strip())
+                normalized_end = self._normalize_time_format(end_time.strip())
+                if not normalized_start or not normalized_end:
+                    return False
+                start_dt = datetime.strptime(normalized_start, "%H:%M")
+                end_dt = datetime.strptime(normalized_end, "%H:%M")
                 slot_duration = (end_dt - start_dt).total_seconds() / 60
                 return slot_duration >= service_duration
         except Exception:
