@@ -165,17 +165,17 @@ class ReservationFlow:
         cancel_keywords = self.intent_keywords.get("cancel", [])
         modify_keywords = self.intent_keywords.get("modify", [])
         
-        # Priority order: reservation > service_selection > staff_selection > modify > cancel
+        # Priority order: modify > cancel > reservation (check specific keywords first to avoid substring issues)
         # Use 'in' operator for substring matching (works with Japanese)
-        if any(keyword in message_normalized for keyword in reservation_keywords):
-            logging.info(f"Detected 'reservation' intent for message: '{message_normalized}'")
-            return "reservation"
-        elif any(keyword in message_normalized for keyword in modify_keywords):
+        if any(keyword in message_normalized for keyword in modify_keywords):
             logging.info(f"Detected 'modify' intent for message: '{message_normalized}'")
             return "modify"
         elif any(keyword in message_normalized for keyword in cancel_keywords):
             logging.info(f"Detected 'cancel' intent for message: '{message_normalized}'")
             return "cancel"
+        elif any(keyword in message_normalized for keyword in reservation_keywords):
+            logging.info(f"Detected 'reservation' intent for message: '{message_normalized}'")
+            return "reservation"
         else:
             logging.info(f"Detected 'general' intent for message: '{message_normalized}'")
             return "general"

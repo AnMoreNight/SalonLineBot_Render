@@ -235,7 +235,7 @@ class RAGFAQ:
                 is_exact_match = query_lower.strip('？?') == index_item['question'].lower().strip('？?')
                 
                 if is_exact_match:
-                    score = 1.0
+                    score = 2.0  # Higher score for exact matches to ensure they rank first
                 else:
                     # Bonus for direct text matches (only for non-exact matches)
                     if any(keyword in index_item['question'] for keyword in query_keywords):
