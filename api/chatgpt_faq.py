@@ -59,6 +59,12 @@ class ChatGPTFAQ:
             if self._is_dangerous_query(user_message):
                 return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
             
+            # Check if we have a processed answer from RAG FAQ (template-based response)
+            if kb_facts and isinstance(kb_facts, dict):
+                processed_answer = kb_facts.get('processed_answer')
+                if processed_answer:
+                    return processed_answer
+            
             # If API is not available, use fallback immediately
             if not self.api_available:
                 return self._generate_fallback_response(kb_facts)

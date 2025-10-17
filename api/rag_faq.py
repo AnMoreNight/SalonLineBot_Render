@@ -256,12 +256,16 @@ class RAGFAQ:
             # Extract KB facts (replace placeholders with actual data)
             kb_facts = self._extract_kb_facts(faq_item)
             
+            # Process template to get final answer
+            processed_answer = self._process_template(faq_item, kb_facts)
+            
             return {
                 'faq_item': faq_item,
                 'similarity_score': float(best_score),
                 'kb_facts': kb_facts,
                 'category': faq_item.get('category', ''),
-                'question': faq_item.get('question', '')
+                'question': faq_item.get('question', ''),
+                'processed_answer': processed_answer
             }
         
         return None
@@ -277,6 +281,19 @@ class RAGFAQ:
                 kb_facts[key] = value
         
         return kb_facts
+    
+    def _process_template(self, faq_item: Dict[str, Any], kb_facts: Dict[str, str]) -> str:
+        """Process the FAQ template with KB facts to generate the final answer"""
+        answer_template = faq_item.get('answer_template', '')
+        
+        # Replace placeholders with actual KB data
+        processed_answer = answer_template
+        for key, value in kb_facts.items():
+            placeholder = f'{{{key}}}'
+            if placeholder in processed_answer:
+                processed_answer = processed_answer.replace(placeholder, value)
+        
+        return processed_answer
 
     def get_kb_facts(self, user_message: str) -> Optional[Dict[str, Any]]:
         """
