@@ -378,7 +378,6 @@ class ReservationFlow:
 ご希望の開始時間と終了時間をお送りください。
 例）10:00~11:00 または 10:00 11:00
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
     
     def _check_advance_booking_time(self, date_str: str, start_time: str) -> tuple:
@@ -474,7 +473,6 @@ class ReservationFlow:
 
 上記の空き時間からお選びください。
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
 
         # Check if the booking time is at least 2 hours in advance
@@ -507,7 +505,6 @@ class ReservationFlow:
 
 例）10:00~11:00（開始時間 < 終了時間）
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
 
         # Validate that the time range falls within available periods
@@ -524,7 +521,6 @@ class ReservationFlow:
         if not is_valid_range:
             return f"""申し訳ございませんが、{start_time}~{end_time}は空いていません。上記の空き時間からお選びください。
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Validate that the selected time period is sufficient for the service
@@ -578,7 +574,6 @@ class ReservationFlow:
 
 例）{required_duration}分以上の時間帯を選択
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Check for user time conflict (user can't have multiple reservations at the same time)
@@ -610,7 +605,6 @@ class ReservationFlow:
 
 別の時間を選択してください。
 
-💡 **他の日を選択したい場合は「日付変更」とお送りください**
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Store both start and end times
