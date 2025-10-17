@@ -470,6 +470,8 @@ class ReservationFlow:
 正しい入力例：
 ・10:00~11:00
 ・10:00 11:00
+・10時~11時
+・10時 11時
 
 上記の空き時間からお選びください。
 
@@ -1174,27 +1176,39 @@ class ReservationFlow:
     def _normalize_time_format(self, time_str: str) -> str:
         """Normalize time string to HH:MM format (zero-padded)"""
         try:
-            # Try parsing with %H:%M first (already normalized)
-            datetime.strptime(time_str, "%H:%M")
-            return time_str
-        except ValueError:
-            try:
-                # Handle single digit hour manually
-                parts = time_str.split(':')
-                if len(parts) == 2 and len(parts[0]) == 1:
+            # Check if already normalized (starts with 0 or is 10+)
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                hour_part = parts[0]
+                minute_part = parts[1]
+                
+                # Validate the format
+                if len(minute_part) != 2 or not minute_part.isdigit():
+                    return None
+                
+                # Normalize hour part
+                if len(hour_part) == 1:
                     # Single digit hour, pad with zero
-                    normalized = f"0{time_str}"
-                    datetime.strptime(normalized, "%H:%M")
-                    return normalized
+                    normalized_hour = f"0{hour_part}"
+                elif len(hour_part) == 2 and hour_part.isdigit():
+                    # Already two digits
+                    normalized_hour = hour_part
                 else:
                     return None
-            except ValueError:
+                
+                # Validate the normalized time
+                normalized_time = f"{normalized_hour}:{minute_part}"
+                datetime.strptime(normalized_time, "%H:%M")
+                return normalized_time
+            else:
                 return None
+        except (ValueError, IndexError):
+            return None
 
     def _parse_time_range(self, text: str) -> tuple:
         """Parse start and end times from user input.
         Returns tuple of (start_time, end_time) in HH:MM format, or (None, None) if invalid.
-        Supports both single and double digit hours.
+        Supports various time formats including single/double digit hours and Japanese format.
         """
         text = text.strip()
         
@@ -1211,6 +1225,64 @@ class ReservationFlow:
         if match:
             start_time = self._normalize_time_format(match.group(1))
             end_time = self._normalize_time_format(match.group(2))
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 3: "9~12" or "9～12" (hour only, assumes :00 minutes)
+        match = re.search(r'^(\d{1,2})[~～](\d{1,2})$', text)
+        if match:
+            start_hour = match.group(1)
+            end_hour = match.group(2)
+            start_time = self._normalize_time_format(f"{start_hour}:00")
+            end_time = self._normalize_time_format(f"{end_hour}:00")
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 4: "9 12" (space separated, hour only)
+        match = re.search(r'^(\d{1,2})\s+(\d{1,2})$', text)
+        if match:
+            start_hour = match.group(1)
+            end_hour = match.group(2)
+            start_time = self._normalize_time_format(f"{start_hour}:00")
+            end_time = self._normalize_time_format(f"{end_hour}:00")
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 5: "9時~12時" or "9時～12時" (Japanese format)
+        match = re.search(r'^(\d{1,2})時[~～](\d{1,2})時$', text)
+        if match:
+            start_hour = match.group(1)
+            end_hour = match.group(2)
+            start_time = self._normalize_time_format(f"{start_hour}:00")
+            end_time = self._normalize_time_format(f"{end_hour}:00")
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 6: "9時 12時" (Japanese format, space separated)
+        match = re.search(r'^(\d{1,2})時\s+(\d{1,2})時$', text)
+        if match:
+            start_hour = match.group(1)
+            end_hour = match.group(2)
+            start_time = self._normalize_time_format(f"{start_hour}:00")
+            end_time = self._normalize_time_format(f"{end_hour}:00")
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 7: Mixed formats like "9:00~12" or "9:30~15"
+        match = re.search(r'^(\d{1,2}:\d{2})[~～](\d{1,2})$', text)
+        if match:
+            start_time = self._normalize_time_format(match.group(1))
+            end_hour = match.group(2)
+            end_time = self._normalize_time_format(f"{end_hour}:00")
+            if start_time and end_time:
+                return start_time, end_time
+        
+        # Pattern 8: Mixed formats like "9:00 12" or "9:30 15"
+        match = re.search(r'^(\d{1,2}:\d{2})\s+(\d{1,2})$', text)
+        if match:
+            start_time = self._normalize_time_format(match.group(1))
+            end_hour = match.group(2)
+            end_time = self._normalize_time_format(f"{end_hour}:00")
             if start_time and end_time:
                 return start_time, end_time
         

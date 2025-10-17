@@ -28,22 +28,34 @@ class GoogleCalendarHelper:
     def _normalize_time_format(self, time_str: str) -> str:
         """Normalize time string to HH:MM format (zero-padded)"""
         try:
-            # Try parsing with %H:%M first (already normalized)
-            datetime.strptime(time_str, "%H:%M")
-            return time_str
-        except ValueError:
-            try:
-                # Handle single digit hour manually
-                parts = time_str.split(':')
-                if len(parts) == 2 and len(parts[0]) == 1:
+            # Check if already normalized (starts with 0 or is 10+)
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                hour_part = parts[0]
+                minute_part = parts[1]
+                
+                # Validate the format
+                if len(minute_part) != 2 or not minute_part.isdigit():
+                    return None
+                
+                # Normalize hour part
+                if len(hour_part) == 1:
                     # Single digit hour, pad with zero
-                    normalized = f"0{time_str}"
-                    datetime.strptime(normalized, "%H:%M")
-                    return normalized
+                    normalized_hour = f"0{hour_part}"
+                elif len(hour_part) == 2 and hour_part.isdigit():
+                    # Already two digits
+                    normalized_hour = hour_part
                 else:
                     return None
-            except ValueError:
+                
+                # Validate the normalized time
+                normalized_time = f"{normalized_hour}:{minute_part}"
+                datetime.strptime(normalized_time, "%H:%M")
+                return normalized_time
+            else:
                 return None
+        except (ValueError, IndexError):
+            return None
 
         self.service = None
         try:
