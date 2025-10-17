@@ -452,35 +452,35 @@
     "category": "支払い・領収書",
     "question": "支払い方法は？",
     "answer_template": "「{PAYMENTS}」に対応しています。",
-    "required_elements": ["支払い方法"]
+    "required_elements": ["PAYMENTS"]
   },
   {
     "id": 66,
     "category": "支払い・領収書",
     "question": "キャッシュレスは使えますか？",
-    "answer_template": "クレジット・交通系IC・コード決済の対応は台帳の支払い欄に従います。",
-    "required_elements": ["キャッシュレス"]
+    "answer_template": "「{PAYMENTS}」に対応しています。",
+    "required_elements": ["PAYMENTS"]
   },
   {
     "id": 67,
     "category": "支払い・領収書",
     "question": "領収書は発行できますか？",
-    "answer_template": "可能です。宛名をご指定ください。",
-    "required_elements": ["領収書"]
+    "answer_template": "{RECEIPT_ISSUE}。",
+    "required_elements": ["RECEIPT_ISSUE"]
   },
   {
     "id": 68,
     "category": "支払い・領収書",
     "question": "クーポンと他割引の併用はできますか？",
-    "answer_template": "併用可否は台帳のクーポン規定に従います。",
-    "required_elements": ["クーポン併用"]
+    "answer_template": "{COUPON_COMBINATION}。",
+    "required_elements": ["COUPON_COMBINATION"]
   },
   {
     "id": 69,
     "category": "支払い・領収書",
     "question": "価格は税込みですか？",
-    "answer_template": "価格は税込み表示です（台帳に別記があれば従います）。",
-    "required_elements": ["税込表示"]
+    "answer_template": "{PRICE_INCLUDE_TAX}。",
+    "required_elements": ["PRICE_INCLUDE_TAX"]
   },
   {
     "id": 70,
