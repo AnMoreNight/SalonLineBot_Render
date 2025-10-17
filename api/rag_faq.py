@@ -75,12 +75,35 @@ class RAGFAQ:
                     possible_paths.append(os.path.join(base_dir, clean_path))
                     # Also try with 'api/' prefix
                     possible_paths.append(os.path.join(base_dir, path))
+                    # Try with uppercase KB.json (for Render deployment)
+                    if 'kb.json' in clean_path:
+                        possible_paths.append(os.path.join(base_dir, clean_path.replace('kb.json', 'KB.json')))
+                    if 'kb.json' in path:
+                        possible_paths.append(os.path.join(base_dir, path.replace('kb.json', 'KB.json')))
+            
+            # Debug: Print all attempted paths and their status
+            print(f"DEBUG: Attempting to load KB data from {path}")
+            for full_path in possible_paths:
+                exists = os.path.exists(full_path)
+                is_file = os.path.isfile(full_path) if exists else False
+                print(f"DEBUG: Path: {full_path} - Exists: {exists}, IsFile: {is_file}")
             
             # Try each possible path
             for full_path in possible_paths:
                 try:
+                    if not os.path.exists(full_path):
+                        print(f"DEBUG: Path does not exist: {full_path}")
+                        continue
+                    
+                    if not os.path.isfile(full_path):
+                        print(f"DEBUG: Path is not a file: {full_path}")
+                        continue
+                    
+                    print(f"DEBUG: Attempting to open: {full_path}")
                     with open(full_path, 'r', encoding='utf-8') as f:
                         kb_list = json.load(f)
+                    
+                    print(f"DEBUG: Successfully loaded KB data from: {full_path}")
                     
                     # Convert list of dicts to key-value mapping
                     kb_dict = {}
@@ -91,7 +114,11 @@ class RAGFAQ:
                             kb_dict[key] = value
                     
                     return kb_dict
-                except (FileNotFoundError, OSError):
+                except (FileNotFoundError, OSError) as e:
+                    print(f"DEBUG: Failed to load from {full_path}: {e}")
+                    continue
+                except json.JSONDecodeError as e:
+                    print(f"DEBUG: JSON decode error from {full_path}: {e}")
                     continue
             
             # If none of the paths worked, raise an error

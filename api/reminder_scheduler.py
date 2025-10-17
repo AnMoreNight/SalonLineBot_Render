@@ -39,6 +39,9 @@ class ReminderScheduler:
             for base_dir in base_dirs:
                 possible_paths.append(os.path.join(base_dir, "data", "kb.json"))
                 possible_paths.append(os.path.join(base_dir, "api", "data", "kb.json"))
+                # Try with uppercase KB.json (for Render deployment)
+                possible_paths.append(os.path.join(base_dir, "data", "KB.json"))
+                possible_paths.append(os.path.join(base_dir, "api", "data", "KB.json"))
             
             # Try each possible path
             for kb_file in possible_paths:

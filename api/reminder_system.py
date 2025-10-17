@@ -135,12 +135,33 @@ class ReminderSystem:
             for base_dir in base_dirs:
                 possible_paths.append(os.path.join(base_dir, "data", "kb.json"))
                 possible_paths.append(os.path.join(base_dir, "api", "data", "kb.json"))
+                # Try with uppercase KB.json (for Render deployment)
+                possible_paths.append(os.path.join(base_dir, "data", "KB.json"))
+                possible_paths.append(os.path.join(base_dir, "api", "data", "KB.json"))
+            
+            # Debug: Print all attempted paths and their status
+            logging.info(f"DEBUG: Attempting to load KB data in ReminderSystem")
+            for kb_file in possible_paths:
+                exists = os.path.exists(kb_file)
+                is_file = os.path.isfile(kb_file) if exists else False
+                logging.info(f"DEBUG: Path: {kb_file} - Exists: {exists}, IsFile: {is_file}")
             
             # Try each possible path
             for kb_file in possible_paths:
                 try:
+                    if not os.path.exists(kb_file):
+                        logging.info(f"DEBUG: Path does not exist: {kb_file}")
+                        continue
+                    
+                    if not os.path.isfile(kb_file):
+                        logging.info(f"DEBUG: Path is not a file: {kb_file}")
+                        continue
+                    
+                    logging.info(f"DEBUG: Attempting to open: {kb_file}")
                     with open(kb_file, 'r', encoding='utf-8') as f:
                         kb_data = json.load(f)
+                    
+                    logging.info(f"DEBUG: Successfully loaded KB data from: {kb_file}")
                     
                     # Convert array format to dictionary
                     kb_dict = {}
@@ -150,7 +171,11 @@ class ReminderSystem:
                         kb_dict[key] = value
                     
                     return kb_dict
-                except (FileNotFoundError, OSError):
+                except (FileNotFoundError, OSError) as e:
+                    logging.info(f"DEBUG: Failed to load from {kb_file}: {e}")
+                    continue
+                except json.JSONDecodeError as e:
+                    logging.info(f"DEBUG: JSON decode error from {kb_file}: {e}")
                     continue
             
             # If none of the paths worked, raise an error
