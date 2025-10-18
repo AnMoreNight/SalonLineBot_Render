@@ -772,11 +772,11 @@ class ReservationFlow:
                     return {"available": True, "message": ""}
                 
                 # Check if service change causes overlap
-                has_overlap, new_end_time, conflict_details = self.google_calendar.check_service_change_overlap(
+                is_available, new_end_time, conflict_details = self.google_calendar.check_service_change_overlap(
                     reservation["date"], reservation["start_time"], new_service, reservation["staff"], reservation["reservation_id"]
                 )
                 
-                if has_overlap:
+                if not is_available:  # is_available=False means there IS an overlap
                     conflict_message = ""
                     if conflict_details:
                         conflict_message = conflict_details.get('message', '')
