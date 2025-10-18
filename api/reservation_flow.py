@@ -2014,7 +2014,7 @@ class ReservationFlow:
 {availability_check["message"]}
 
 別の時間帯で変更いただけますでしょうか？
-「予約を変更したい」とお送りください。"""
+「予約変更したい」とお送りください。"""
         
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
