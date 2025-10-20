@@ -20,7 +20,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: bash -lc 'curl -v -X POST -H "Content-Type: application/json" "$WEB_BASE_URL/api/run-reminders" || echo "Cron job failed"'
+    startCommand: python -c "import os, requests; print('URL:', os.getenv('WEB_BASE_URL') + '/api/run-reminders'); r = requests.post(os.getenv('WEB_BASE_URL') + '/api/run-reminders'); print('Status:', r.status_code); print('Response:', r.text)"
     envVars:
       - key: WEB_BASE_URL
         sync: false
