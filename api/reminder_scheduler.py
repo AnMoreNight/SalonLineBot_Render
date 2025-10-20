@@ -155,7 +155,7 @@ class ReminderScheduler:
                 
                 # Check if it's time to run reminders (Tokyo time)
                 # if current_hour == scheduled_hour and current_minute == scheduled_minute:
-                if current_hour == 2 and current_minute == 00:
+                if current_hour == 9 and current_minute == 00:
                     print(f"Tokyo time {current_tokyo_time.strftime('%H:%M')} - Running reminders...")
                     self._run_reminders()
                     # Sleep for 60 seconds to avoid running multiple times in the same minute
