@@ -1,24 +1,24 @@
 {
   "services": {
-    "カット": {
+    "service_1": {
       "name": "カット",
       "duration": 60,
       "price": 3000,
       "description": "ヘアカットサービス"
     },
-    "カラー": {
+    "service_2": {
       "name": "カラー",
       "duration": 120,
       "price": 8000,
       "description": "ヘアカラーサービス"
     },
-    "パーマ": {
+    "service_3": {
       "name": "パーマ",
       "duration": 150,
       "price": 12000,
       "description": "パーマサービス"
     },
-    "トリートメント": {
+    "service_4": {
       "name": "トリートメント",
       "duration": 90,
       "price": 5000,
@@ -26,28 +26,28 @@
     }
   },
   "staff": {
-    "田中": {
+    "staff_1": {
       "name": "田中",
       "specialty": "カット・カラー",
       "experience": "5年",
       "email_env": "STAFF_TANAKA_EMAIL",
       "color_id": "1"
     },
-    "佐藤": {
+    "staff_2": {
       "name": "佐藤",
       "specialty": "パーマ・トリートメント",
       "experience": "3年",
       "email_env": "STAFF_SATO_EMAIL",
       "color_id": "2"
     },
-    "山田": {
+    "staff_3": {
       "name": "山田",
       "specialty": "カット・カラー・パーマ",
       "experience": "8年",
       "email_env": "STAFF_YAMADA_EMAIL",
       "color_id": "3"
     },
-    "未指定": {
+    "staff_4": {
       "name": "未指定",
       "specialty": "全般",
       "experience": "担当者決定",

@@ -81,6 +81,28 @@ class ReservationFlow:
         except (ValueError, IndexError):
             return start_time
     
+    def _get_service_name_by_id(self, service_id: str) -> str:
+        """Get service name by ID"""
+        return self.services.get(service_id, {}).get("name", service_id)
+    
+    def _get_staff_name_by_id(self, staff_id: str) -> str:
+        """Get staff name by ID"""
+        return self.staff_members.get(staff_id, {}).get("name", staff_id)
+    
+    def _get_service_id_by_name(self, service_name: str) -> str:
+        """Get service ID by name"""
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == service_name:
+                return service_id
+        return service_name
+    
+    def _get_staff_id_by_name(self, staff_name: str) -> str:
+        """Get staff ID by name"""
+        for staff_id, staff_data in self.staff_members.items():
+            if staff_data.get("name") == staff_name:
+                return staff_id
+        return staff_name
+    
     def _get_available_slots(self, selected_date: str = None, staff_name: str = None) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar for a specific date and staff member"""
         if selected_date is None:
@@ -225,7 +247,8 @@ class ReservationFlow:
         
         # Generate service list from JSON data
         service_list = []
-        for service_name, service_data in self.services.items():
+        for service_id, service_data in self.services.items():
+            service_name = service_data.get("name", service_id)
             duration = service_data.get("duration", 60)
             price = service_data.get("price", 3000)
             service_list.append(f"・{service_name}（{duration}分・{price:,}円）")
@@ -252,22 +275,26 @@ class ReservationFlow:
         
         selected_service = None
         
-        # More flexible service matching - normalize for both Japanese and English
-        service_mapping = {
-            "カット": "カット",
-            "カラー": "カラー", 
-            "パーマ": "パーマ",
-            "トリートメント": "トリートメント",
-            "cut": "カット",
-            "color": "カラー",
-            "perm": "パーマ",
-            "treatment": "トリートメント"
-        }
-        
-        for keyword, service_name in service_mapping.items():
-            if keyword.lower() in message_normalized.lower():
+        # Service matching using JSON data
+        for service_id, service_data in self.services.items():
+            service_name = service_data.get("name", service_id)
+            if service_name.lower() in message_normalized.lower():
                 selected_service = service_name
                 break
+        
+        # Also check for English keywords
+        if not selected_service:
+            service_mapping = {
+                "cut": "カット",
+                "color": "カラー",
+                "perm": "パーマ",
+                "treatment": "トリートメント"
+            }
+            
+            for keyword, service_name in service_mapping.items():
+                if keyword.lower() in message_normalized.lower():
+                    selected_service = service_name
+                    break
         
         if not selected_service:
             return "申し訳ございませんが、そのサービスは提供しておりません。上記のサービスからお選びください。"
@@ -275,13 +302,20 @@ class ReservationFlow:
         self.user_states[user_id]["data"]["service"] = selected_service
         self.user_states[user_id]["step"] = "staff_selection"
         
+        # Generate staff list from JSON data
+        staff_list = []
+        for staff_id, staff_data in self.staff_members.items():
+            staff_name = staff_data.get("name", staff_id)
+            specialty = staff_data.get("specialty", "")
+            experience = staff_data.get("experience", "")
+            staff_list.append(f"・{staff_name}（{specialty}・{experience}）")
+        
+        staff_text = "\n".join(staff_list)
+        
         return f"""{selected_service}ですね！
 担当の美容師をお選びください。
 
-・田中（カット・カラー専門・5年経験）
-・佐藤（パーマ・トリートメント専門・3年経験）
-・山田（全般対応・8年経験）
-・未指定（担当者決定）
+{staff_text}
 
 美容師名をお送りください。
 
@@ -306,9 +340,10 @@ class ReservationFlow:
         message_lower = message.strip().lower()
         
         # Staff matching using JSON keywords
-        for staff_name, keywords in self.staff_keywords.items():
+        for staff_id, keywords in self.staff_keywords.items():
             if any(keyword in message_lower for keyword in keywords):
-                selected_staff = staff_name
+                # Get the actual staff name from the staff data
+                selected_staff = self._get_staff_name_by_id(staff_id)
                 break
         
         if not selected_staff:
