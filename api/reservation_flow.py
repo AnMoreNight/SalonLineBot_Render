@@ -24,7 +24,6 @@ class ReservationFlow:
         self.keywords_data = self._load_keywords_data()
         self.intent_keywords = self.keywords_data.get("intent_keywords", {})
         self.navigation_keywords = self.keywords_data.get("navigation_keywords", {})
-        self.staff_keywords = self.keywords_data.get("staff_keywords", {})
         self.confirmation_keywords = self.keywords_data.get("confirmation_keywords", {})
     
     def _load_services_data(self) -> Dict[str, Any]:
@@ -102,6 +101,20 @@ class ReservationFlow:
             if staff_data.get("name") == staff_name:
                 return staff_id
         return staff_name
+    
+    def _has_single_staff(self) -> bool:
+        """Check if there's only one staff member (excluding '未指定')"""
+        active_staff = [staff for staff_id, staff in self.staff_members.items() 
+                        if staff.get("name") != "未指定"]
+        return len(active_staff) == 1
+    
+    def _get_single_staff_name(self) -> str:
+        """Get the name of the single staff member"""
+        active_staff = [staff for staff_id, staff in self.staff_members.items() 
+                        if staff.get("name") != "未指定"]
+        if len(active_staff) == 1:
+            return active_staff[0].get("name")
+        return None
     
     def _get_available_slots(self, selected_date: str = None, staff_name: str = None) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar for a specific date and staff member"""
@@ -300,19 +313,35 @@ class ReservationFlow:
             return "申し訳ございませんが、そのサービスは提供しておりません。上記のサービスからお選びください。"
         
         self.user_states[user_id]["data"]["service"] = selected_service
-        self.user_states[user_id]["step"] = "staff_selection"
         
-        # Generate staff list from JSON data
-        staff_list = []
-        for staff_id, staff_data in self.staff_members.items():
-            staff_name = staff_data.get("name", staff_id)
-            specialty = staff_data.get("specialty", "")
-            experience = staff_data.get("experience", "")
-            staff_list.append(f"・{staff_name}（{specialty}・{experience}）")
-        
-        staff_text = "\n".join(staff_list)
-        
-        return f"""{selected_service}ですね！
+        # Check if there's only one staff member
+        if self._has_single_staff():
+            # Automatically assign the single staff member
+            single_staff_name = self._get_single_staff_name()
+            self.user_states[user_id]["data"]["staff"] = single_staff_name
+            self.user_states[user_id]["step"] = "date_selection"
+            
+            return f"""{selected_service}ですね！
+担当は{single_staff_name}さんで承ります。
+
+ご希望の日付をお選びください。
+
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください。"""
+        else:
+            # Multiple staff members - show selection
+            self.user_states[user_id]["step"] = "staff_selection"
+            
+            # Generate staff list from JSON data
+            staff_list = []
+            for staff_id, staff_data in self.staff_members.items():
+                staff_name = staff_data.get("name", staff_id)
+                specialty = staff_data.get("specialty", "")
+                experience = staff_data.get("experience", "")
+                staff_list.append(f"・{staff_name}（{specialty}・{experience}）")
+            
+            staff_text = "\n".join(staff_list)
+            
+            return f"""{selected_service}ですね！
 担当の美容師をお選びください。
 
 {staff_text}
@@ -339,11 +368,11 @@ class ReservationFlow:
         selected_staff = None
         message_lower = message.strip().lower()
         
-        # Staff matching using JSON keywords
-        for staff_id, keywords in self.staff_keywords.items():
-            if any(keyword in message_lower for keyword in keywords):
-                # Get the actual staff name from the staff data
-                selected_staff = self._get_staff_name_by_id(staff_id)
+        # Staff matching using direct name matching
+        for staff_id, staff_data in self.staff_members.items():
+            staff_name = staff_data.get("name", staff_id)
+            if staff_name.lower() in message_lower or message_lower in staff_name.lower():
+                selected_staff = staff_name
                 break
         
         if not selected_staff:
@@ -1861,20 +1890,65 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Show available staff members as candidates (excluding current staff)
-        current_staff = reservation['staff']
-        available_staff = [staff for staff in self.staff_members.keys() if staff != current_staff]
-        staff_list = "\n".join([f"• {staff}" for staff in available_staff])
-        
-        # Update user state to wait for staff selection
-        self.user_states[user_id]["step"] = "modify_staff_select"
-        
-        return f"""担当者を選択してください
+        # Check if there's only one staff member
+        if self._has_single_staff():
+            single_staff_name = self._get_single_staff_name()
+            current_staff = reservation['staff']
+            
+            # If the single staff is the same as current staff, can't change
+            if single_staff_name == current_staff:
+                return f"""申し訳ございませんが、担当者を変更できません。
+
+現在の担当者：{current_staff}
+利用可能な担当者：{single_staff_name}
+
+担当者が1名のみのため、変更はできません。
+他の項目（日時・サービス）の変更をご希望の場合は、メインメニューから選択してください。"""
+            else:
+                # Automatically change to the single staff member
+                return self._confirm_staff_change(user_id, single_staff_name)
+        else:
+            # Multiple staff members - show selection
+            current_staff = reservation['staff']
+            available_staff = []
+            for staff_id, staff_data in self.staff_members.items():
+                staff_name = staff_data.get("name", staff_id)
+                if staff_name != current_staff:
+                    available_staff.append(staff_name)
+            
+            staff_list = "\n".join([f"• {staff}" for staff in available_staff])
+            
+            # Update user state to wait for staff selection
+            self.user_states[user_id]["step"] = "modify_staff_select"
+            
+            return f"""担当者を選択してください
 
 📋 利用可能な担当者：
 {staff_list}
 
 上記から担当者名を入力してください。"""
+    
+    def _confirm_staff_change(self, user_id: str, new_staff: str) -> str:
+        """Confirm staff change and update reservation"""
+        state = self.user_states[user_id]
+        reservation = state["reservation_data"]
+        
+        # Update the reservation with new staff
+        reservation['staff'] = new_staff
+        
+        # Update user state to confirmation
+        self.user_states[user_id]["step"] = "modify_staff_confirm"
+        
+        return f"""担当者変更の確認
+
+📋 変更内容：
+🆔 予約ID：{reservation['reservation_id']}
+📅 日時：{reservation['date']} {reservation['start_time']}~{reservation['end_time']}
+💇 サービス：{reservation['service']}
+👨‍💼 担当者：{reservation['staff']} → {new_staff}
+
+この内容で変更しますか？
+「はい」または「確定」と入力してください。"""
     
     def _handle_staff_selection_for_modification(self, user_id: str, message: str) -> str:
         """Handle staff selection for modification"""
@@ -1885,19 +1959,25 @@ class ReservationFlow:
         message_normalized = message.strip()
         new_staff = None
         
-        # Try exact match first
-        if message_normalized in self.staff_members:
-            new_staff = message_normalized
-        else:
+        # Try exact match first with staff names
+        for staff_id, staff_data in self.staff_members.items():
+            staff_name = staff_data.get("name", staff_id)
+            if staff_name == message_normalized:
+                new_staff = staff_name
+                break
+        
+        if not new_staff:
             # Try case-insensitive match
-            for staff_name in self.staff_members.keys():
+            for staff_id, staff_data in self.staff_members.items():
+                staff_name = staff_data.get("name", staff_id)
                 if staff_name.lower() == message_normalized.lower():
                     new_staff = staff_name
                     break
             
             # Try partial match (if user types part of the staff name)
             if not new_staff:
-                for staff_name in self.staff_members.keys():
+                for staff_id, staff_data in self.staff_members.items():
+                    staff_name = staff_data.get("name", staff_id)
                     if message_normalized in staff_name or staff_name in message_normalized:
                         new_staff = staff_name
                         break
@@ -1905,7 +1985,11 @@ class ReservationFlow:
         if not new_staff:
             # Show available staff excluding current staff
             current_staff = reservation['staff']
-            available_staff = [staff for staff in self.staff_members.keys() if staff != current_staff]
+            available_staff = []
+            for staff_id, staff_data in self.staff_members.items():
+                staff_name = staff_data.get("name", staff_id)
+                if staff_name != current_staff:
+                    available_staff.append(staff_name)
             available_staff_str = "、".join(available_staff)
             return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff_str}\n\n上記から選択してください。"
         
