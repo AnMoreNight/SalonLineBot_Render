@@ -1746,15 +1746,6 @@ class ReservationFlow:
 👨‍💼 担当者：{reservation['staff']}
 
 現在の予約をキャンセルいたしました。
-
-🆕 **新しい予約を作成いたします**
-以下の手順で新しい予約を作成してください：
-
-1️⃣ 希望のサービスを選択
-2️⃣ 担当者を選択  
-3️⃣ 日時を選択
-4️⃣ 内容を確認して確定
-
 新しい予約を作成するには「予約したい」とお送りください。"""
                 
                 # Clear the modification state and set up for new reservation
