@@ -686,9 +686,14 @@ class ReservationFlow:
         service = self.user_states[user_id]["data"]["service"]
         staff = self.user_states[user_id]["data"]["staff"]
         service_info = self.services[service]
-        
         # Check if end time was automatically adjusted
         original_end_time = self.user_states[user_id]["data"].get("original_end_time")
+        
+        print("[Time Validation] Service:", service)
+        print("[Time Validation] Staff:", staff)
+        print("[Time Validation] Service info:", service_info)
+        print("[Time Validation] Original end time:", original_end_time)
+        print("[Time Validation] End time:", end_time)
         adjustment_message = ""
         if original_end_time and original_end_time != end_time:
             adjustment_message = f"\n💡 **終了時間を{service}の所要時間に合わせて{end_time}に調整しました**\n"
