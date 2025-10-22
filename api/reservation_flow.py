@@ -686,13 +686,21 @@ class ReservationFlow:
         self.user_states[user_id]["data"]["end_time"] = end_time
         self.user_states[user_id]["data"]["time"] = start_time  # Keep for backward compatibility
         self.user_states[user_id]["step"] = "confirmation"
-        
+
+        print("[Time Validation] User states after storing:", self.user_states[user_id])
+
         service = self.user_states[user_id]["data"]["service"]
         staff = self.user_states[user_id]["data"]["staff"]
-        service_info = self.services[service]
+
+        # Get service info by finding the service ID first
+        service_info = {}
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == service:
+                service_info = service_data
+                break
         # Check if end time was automatically adjusted
         original_end_time = self.user_states[user_id]["data"].get("original_end_time")
-        
+
         print("[Time Validation] Service:", service)
         print("[Time Validation] Staff:", staff)
         print("[Time Validation] Service info:", service_info)
@@ -2105,19 +2113,25 @@ class ReservationFlow:
         message_normalized = message.strip()
         new_service = None
         
-        # Try exact match first
-        if message_normalized in self.services:
-            new_service = message_normalized
-        else:
-            # Try case-insensitive match
-            for service_name in self.services.keys():
+        # Try exact match first against service names
+        for service_id, service_data in self.services.items():
+            service_name = service_data.get("name", service_id)
+            if service_name == message_normalized:
+                new_service = service_name
+                break
+        
+        if not new_service:
+            # Try case-insensitive match against service names
+            for service_id, service_data in self.services.items():
+                service_name = service_data.get("name", service_id)
                 if service_name.lower() == message_normalized.lower():
                     new_service = service_name
                     break
             
             # Try partial match (if user types part of the service name)
             if not new_service:
-                for service_name in self.services.keys():
+                for service_id, service_data in self.services.items():
+                    service_name = service_data.get("name", service_id)
                     if message_normalized in service_name or service_name in message_normalized:
                         new_service = service_name
                         break
@@ -2125,7 +2139,12 @@ class ReservationFlow:
         if not new_service:
             # Show available services excluding current service
             current_service = reservation['service']
-            available_services = [service for service in self.services.keys() if service != current_service]
+            available_service_names = []
+            for service_id, service_data in self.services.items():
+                service_name = service_data.get("name", service_id)
+                if service_name != current_service:
+                    available_service_names.append(service_name)
+            available_services = available_service_names
             available_services_str = "、".join(available_services)
             return f"申し訳ございませんが、そのサービスは選択できません。\n\n利用可能なサービス：\n{available_services_str}\n\n上記から選択してください。"
         
@@ -2378,27 +2397,43 @@ class ReservationFlow:
         message_normalized = message.strip()
         new_service = None
         
-        # Try exact match first
-        if message_normalized in self.services:
-            new_service = message_normalized
-        else:
-            # Try case-insensitive match
-            for service_name in self.services.keys():
+        # Try exact match first against service names
+        for service_id, service_data in self.services.items():
+            service_name = service_data.get("name", service_id)
+            if service_name == message_normalized:
+                new_service = service_name
+                break
+        
+        if not new_service:
+            # Try case-insensitive match against service names
+            for service_id, service_data in self.services.items():
+                service_name = service_data.get("name", service_id)
                 if service_name.lower() == message_normalized.lower():
                     new_service = service_name
                     break
             
             # Try partial match (if user types part of the service name)
             if not new_service:
-                for service_name in self.services.keys():
+                for service_id, service_data in self.services.items():
+                    service_name = service_data.get("name", service_id)
                     if message_normalized in service_name or service_name in message_normalized:
                         new_service = service_name
                         break
         
         if not new_service:
-            available_services = "、".join(self.services.keys())
+            # Get available service names for display
+            available_service_names = []
+            for service_id, service_data in self.services.items():
+                available_service_names.append(service_data.get("name", service_id))
+            available_services = "、".join(available_service_names)
             return f"申し訳ございませんが、そのサービスは提供しておりません。\n\n利用可能なサービス：\n{available_services}\n\n上記から選択してください。"
-        new_service_info = self.services[new_service]
+        
+        # Get service info by finding the service ID first
+        new_service_info = {}
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == new_service:
+                new_service_info = service_data
+                break
         new_duration = new_service_info["duration"]
         new_price = new_service_info["price"]
         
@@ -2532,25 +2567,35 @@ class ReservationFlow:
         message_normalized = message.strip()
         new_staff = None
         
-        # Try exact match first
-        if message_normalized in self.staff_members:
-            new_staff = message_normalized
-        else:
-            # Try case-insensitive match
-            for staff_name in self.staff_members.keys():
+        # Try exact match first against staff names
+        for staff_id, staff_data in self.staff_members.items():
+            staff_name = staff_data.get("name", staff_id)
+            if staff_name == message_normalized:
+                new_staff = staff_name
+                break
+        
+        if not new_staff:
+            # Try case-insensitive match against staff names
+            for staff_id, staff_data in self.staff_members.items():
+                staff_name = staff_data.get("name", staff_id)
                 if staff_name.lower() == message_normalized.lower():
                     new_staff = staff_name
                     break
             
             # Try partial match (if user types part of the staff name)
             if not new_staff:
-                for staff_name in self.staff_members.keys():
+                for staff_id, staff_data in self.staff_members.items():
+                    staff_name = staff_data.get("name", staff_id)
                     if message_normalized in staff_name or staff_name in message_normalized:
                         new_staff = staff_name
                         break
         
         if not new_staff:
-            available_staff = "、".join(self.staff_members.keys())
+            # Get available staff names for display
+            available_staff_names = []
+            for staff_id, staff_data in self.staff_members.items():
+                available_staff_names.append(staff_data.get("name", staff_id))
+            available_staff = "、".join(available_staff_names)
             return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff}\n\n上記から選択してください。"
         
         # Check if the new staff is available for the current reservation time
