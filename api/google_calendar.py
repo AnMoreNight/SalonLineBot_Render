@@ -542,7 +542,28 @@ class GoogleCalendarHelper:
     
     def _generate_fallback_slots(self, start_date: datetime, end_date: datetime) -> list:
         """Generate fallback slots when Google Calendar is not available"""
-        return self._generate_all_slots(start_date, end_date, None)
+        print("[Fallback] Generating fallback slots - Google Calendar not configured")
+        try:
+            slots = self._generate_all_slots(start_date, end_date, None)
+            print(f"[Fallback] Generated {len(slots)} fallback slots")
+            return slots
+        except Exception as e:
+            print(f"[Fallback] Error generating fallback slots: {e}")
+            # Return minimal fallback slots
+            return [
+                {
+                    "date": start_date.strftime("%Y-%m-%d"),
+                    "time": "09:00",
+                    "end_time": "12:00",
+                    "available": True
+                },
+                {
+                    "date": start_date.strftime("%Y-%m-%d"),
+                    "time": "13:00",
+                    "end_time": "18:00",
+                    "available": True
+                }
+            ]
     
     def get_calendar_url(self) -> str:
         """Get the public Google Calendar URL for viewing availability"""

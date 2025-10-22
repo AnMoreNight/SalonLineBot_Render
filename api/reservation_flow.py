@@ -545,20 +545,43 @@ class ReservationFlow:
         
         selected_date = self.user_states[user_id]["data"]["date"]
         staff_name = self.user_states[user_id]["data"].get("staff")
-        available_slots = self._get_available_slots(selected_date, staff_name)
-        available_periods = [slot for slot in available_slots if slot["available"]]
+        
+        # Get available slots with better error handling
+        try:
+            available_slots = self._get_available_slots(selected_date, staff_name)
+            available_periods = [slot for slot in available_slots if slot["available"]]
+            
+            # Debug logging
+            print(f"[Time Selection] Available slots for {selected_date}: {len(available_slots)}")
+            print(f"[Time Selection] Available periods: {len(available_periods)}")
+            for period in available_periods:
+                print(f"  {period['time']} - {period['end_time']}")
+                
+        except Exception as e:
+            logging.error(f"Error getting available slots: {e}")
+            return f"申し訳ございません。空き時間の取得中にエラーが発生しました。\nスタッフまでお問い合わせください。"
 
         # Parse start time from user input (only start time needed now)
         start_time = self._parse_single_time(message.strip())
         
         if not start_time:
-            return """時間の入力形式が正しくありません。
+            # Show available periods in error message
+            period_strings = []
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                period_strings.append(f"・{period_start}~{period_end}")
+            
+            return f"""時間の入力形式が正しくありません。
 
 正しい入力例：
 ・10:00
 ・10:30
 ・10時
 ・10時30分
+
+{selected_date}の空いている時間帯：
+{chr(10).join(period_strings)}
 
 上記の空き時間から開始時間をお選びください。
 
@@ -584,17 +607,39 @@ class ReservationFlow:
 
         # Validate that the time range falls within available periods
         is_valid_range = False
+        matching_period = None
+        
         for period in available_periods:
             period_start = period["time"]
             period_end = period["end_time"]
             
+            # Debug logging
+            print(f"[Time Validation] Checking period: {period_start} - {period_end}")
+            print(f"  start_time: {start_time}, end_time: {end_time}")
+            print(f"  period_start <= start_time: {period_start} <= {start_time} = {period_start <= start_time}")
+            print(f"  end_time <= period_end: {end_time} <= {period_end} = {end_time <= period_end}")
+            
             # Check if the entire time range is within this period
             if period_start <= start_time and end_time <= period_end:
                 is_valid_range = True
+                matching_period = period
+                print(f"  ✅ VALID: Time range fits in this period")
                 break
+            else:
+                print(f"  ❌ INVALID: Time range doesn't fit in this period")
         
         if not is_valid_range:
+            # Show available periods in error message
+            period_strings = []
+            for period in available_periods:
+                period_start = period["time"]
+                period_end = period["end_time"]
+                period_strings.append(f"・{period_start}~{period_end}")
+            
             return f"""申し訳ございませんが、{start_time}から{required_duration}分の予約は空いていません。
+
+{selected_date}の空いている時間帯：
+{chr(10).join(period_strings)}
 
 上記の空き時間からお選びください。
 
