@@ -325,6 +325,14 @@ class ReservationFlow:
 担当は{single_staff_name}さんで承ります。
 
 ご希望の日付をお選びください。
+📅 **Googleカレンダーで空き状況を確認してください：**
+🔗 {self.google_calendar.get_calendar_url()}
+
+💡 **手順：**
+1️⃣ 上記リンクをクリックしてGoogleカレンダーを開く
+2️⃣ 空いている日付を確認
+3️⃣ 希望の日付を「YYYY-MM-DD」形式で送信
+📝 例：`2025-01-15`
 
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください。"""
         else:
