@@ -1963,8 +1963,12 @@ class ReservationFlow:
         
         # Show available services as candidates (excluding current service)
         current_service = reservation['service']
-        available_services = [service for service in self.services.keys() if service != current_service]
-        service_list = "\n".join([f"• {service}" for service in available_services])
+        available_service_names = []
+        for service_id, service_data in self.services.items():
+            service_name = service_data.get("name", service_id)
+            if service_name != current_service:
+                available_service_names.append(service_name)
+        service_list = "\n".join([f"• {service_name}" for service_name in available_service_names])
         
         # Update user state to wait for service selection
         self.user_states[user_id]["step"] = "modify_service_select"
@@ -1981,23 +1985,10 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # Check if there's only one staff member
+        # If there is only one active staff, skip modification flow entirely
         if self._has_single_staff():
             single_staff_name = self._get_single_staff_name()
-            current_staff = reservation['staff']
-            
-            # If the single staff is the same as current staff, can't change
-            if single_staff_name == current_staff:
-                return f"""申し訳ございませんが、担当者を変更できません。
-
-現在の担当者：{current_staff}
-利用可能な担当者：{single_staff_name}
-
-担当者が1名のみのため、変更はできません。
-他の項目（日時・サービス）の変更をご希望の場合は、メインメニューから選択してください。"""
-            else:
-                # Automatically change to the single staff member
-                return self._confirm_staff_change(user_id, single_staff_name)
+            return f"担当者は{single_staff_name}のみのため、担当者変更はスキップします。"
         else:
             # Multiple staff members - show selection
             current_staff = reservation['staff']
