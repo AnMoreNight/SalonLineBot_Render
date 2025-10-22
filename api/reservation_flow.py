@@ -570,8 +570,14 @@ class ReservationFlow:
             return time_error_message
 
         # Calculate end time based on service duration
-        service = self.user_states[user_id]["data"]["service"]
-        service_info = self.services.get(service, {})
+        service_name = self.user_states[user_id]["data"]["service"]
+        # Find service by name in the services data
+        service_info = {}
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == service_name:
+                service_info = service_data
+                break
+        
         required_duration = service_info.get("duration", 60)  # Default to 60 minutes
         
         end_time = self._calculate_optimal_end_time(start_time, required_duration)
@@ -696,7 +702,12 @@ class ReservationFlow:
                 sheets_logger = GoogleSheetsLogger()
                 
                 # Prepare reservation data for Google Sheets
-                service_info = self.services.get(reservation_data['service'], {})
+                service_name = reservation_data['service']
+                service_info = {}
+                for service_id, service_data in self.services.items():
+                    if service_data.get("name") == service_name:
+                        service_info = service_data
+                        break
                 sheet_reservation_data = {
                     "reservation_id": reservation_id,
                     "user_id": user_id,  # Add user ID for reminder system
@@ -761,7 +772,12 @@ class ReservationFlow:
             
             # If no end_time, calculate it from service duration
             if not end_time:
-                service_info = self.services.get(reservation_data['service'], {})
+                service_name = reservation_data['service']
+                service_info = {}
+                for service_id, service_data in self.services.items():
+                    if service_data.get("name") == service_name:
+                        service_info = service_data
+                        break
                 duration = service_info.get('duration', 60)  # Default 60 minutes
                 start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
                 end_dt = start_dt + timedelta(minutes=duration)
@@ -1846,8 +1862,12 @@ class ReservationFlow:
 上記の空き時間から開始時間をお選びください。"""
         
         # Calculate end time based on service duration
-        service = reservation.get("service", "")
-        service_info = self.services.get(service, {})
+        service_name = reservation.get("service", "")
+        service_info = {}
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == service_name:
+                service_info = service_data
+                break
         required_duration = service_info.get("duration", 60)  # Default to 60 minutes
         
         end_time = self._calculate_optimal_end_time(start_time, required_duration)
@@ -2188,7 +2208,12 @@ class ReservationFlow:
             
             # Get service duration
             service_name = reservation["service"]
-            service_duration = self.services.get(service_name, {}).get("duration", 60)
+            service_info = {}
+            for service_id, service_data in self.services.items():
+                if service_data.get("name") == service_name:
+                    service_info = service_data
+                    break
+            service_duration = service_info.get("duration", 60)
             
             # Calculate correct end time based on start time + service duration
             start_dt = datetime.strptime(start_time, "%H:%M")
