@@ -956,11 +956,12 @@ class GoogleCalendarHelper:
             
             # Get all events for the date
             all_events = self.get_events_for_date(date_str)
-            
+            print("[User Time Conflict] All events:", all_events)
             # Parse the requested time period
             start_datetime = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
             end_datetime = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
-            
+            print("[User Time Conflict] Start datetime:", start_datetime)
+            print("[User Time Conflict] End datetime:", end_datetime)
             # Check for overlaps with user's existing reservations
             for event in all_events:
                 # Skip the reservation being modified

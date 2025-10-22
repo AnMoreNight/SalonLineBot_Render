@@ -545,7 +545,7 @@ class ReservationFlow:
         
         selected_date = self.user_states[user_id]["data"]["date"]
         staff_name = self.user_states[user_id]["data"].get("staff")
-        
+        print("[Time Selection] :", staff_name, selected_date)
         # Get available slots with better error handling
         try:
             available_slots = self._get_available_slots(selected_date, staff_name)
@@ -649,7 +649,8 @@ class ReservationFlow:
         user_time_conflict = self.google_calendar.check_user_time_conflict(
             selected_date, start_time, end_time, user_id
         )
-        
+        print("[Time Validation] User ID:", user_id)
+        print("[Time Validation] User time conflict:", user_time_conflict)
         if user_time_conflict:
             # Return to time selection with error message
             self.user_states[user_id]["step"] = "time_selection"
