@@ -678,6 +678,10 @@ class ReservationFlow:
 ❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
         
         # Store both start and end times
+        print("[Time Validation] Start time:", start_time)
+        print("[Time Validation] End time:", end_time)
+        print("[Time Validation] User ID:", user_id)
+        print("[Time Validation] User states:", self.user_states[user_id])
         self.user_states[user_id]["data"]["start_time"] = start_time
         self.user_states[user_id]["data"]["end_time"] = end_time
         self.user_states[user_id]["data"]["time"] = start_time  # Keep for backward compatibility
