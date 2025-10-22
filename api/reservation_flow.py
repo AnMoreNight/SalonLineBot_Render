@@ -116,6 +116,22 @@ class ReservationFlow:
             return active_staff[0].get("name")
         return None
     
+    def _get_modification_menu(self) -> str:
+        """Get the modification menu, conditionally showing staff option"""
+        menu_items = [
+            "1️⃣ 日時変更したい",
+            "2️⃣ サービス変更したい"
+        ]
+        
+        # Only show staff modification if there are multiple staff members
+        if not self._has_single_staff():
+            menu_items.append("3️⃣ 担当者変更したい")
+            menu_items.append("4️⃣ 複数項目変更したい（再予約）")
+        else :
+            menu_items.append("3️⃣ 複数項目変更したい（再予約）")
+        
+        return "\n".join(menu_items)
+    
     def _get_available_slots(self, selected_date: str = None, staff_name: str = None) -> List[Dict[str, Any]]:
         """Get available time slots from Google Calendar for a specific date and staff member"""
         if selected_date is None:
@@ -1549,10 +1565,7 @@ class ReservationFlow:
 🔗 {calendar_url}
 
 何を変更しますか？
-1️⃣ 日時変更したい
-2️⃣ サービス変更したい
-3️⃣ 担当者変更したい
-4️⃣ 複数項目変更したい（再予約）"""
+{self._get_modification_menu()}"""
                 else:
                     return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
             
@@ -1581,10 +1594,7 @@ class ReservationFlow:
 🔗 {calendar_url}
 
 何を変更しますか？
-1️⃣ 日時変更したい
-2️⃣ サービス変更したい
-3️⃣ 担当者変更したい
-4️⃣ 複数項目変更したい（再予約）"""
+{self._get_modification_menu()}"""
                 else:
                     return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
             else:
@@ -1609,14 +1619,21 @@ class ReservationFlow:
             print("Selected service modification (2)")
             return self._handle_service_modification(user_id, message)
         elif message.strip() == "3":
-            print("Selected staff modification (3)")
-            return self._handle_staff_modification(user_id, message)
+            # Check if staff modification is available
+            if self._has_single_staff():
+                print("Selected re-reservation (3 - staff not available)")
+                return self._handle_re_reservation(user_id, message)
+            else:
+                print("Selected staff modification (3)")
+                return self._handle_staff_modification(user_id, message)
         elif message.strip() == "4":
-            print("Selected re-reservation (4)")
-            return self._handle_re_reservation(user_id, message)
+            # Only available when staff modification is available
+            if not self._has_single_staff():
+                print("Selected re-reservation (4)")
+                return self._handle_re_reservation(user_id, message)
         
         # Only numeric selection is supported
-        return "申し訳ございませんが、正しい番号を入力してください。\n\n1️⃣ 日時変更したい\n2️⃣ サービス変更したい\n3️⃣ 担当者変更したい\n4️⃣ 複数項目変更したい（再予約）"
+        return f"申し訳ございませんが、正しい番号を入力してください。\n\n{self._get_modification_menu()}"
     
     def _handle_re_reservation(self, user_id: str, message: str) -> str:
         """Handle re-reservation option - cancel current reservation and start new reservation"""
@@ -1985,25 +2002,23 @@ class ReservationFlow:
         state = self.user_states[user_id]
         reservation = state["reservation_data"]
         
-        # If there is only one active staff, skip modification flow entirely
-        if self._has_single_staff():
-            single_staff_name = self._get_single_staff_name()
-            return f"担当者は{single_staff_name}のみのため、担当者変更はスキップします。"
-        else:
-            # Multiple staff members - show selection
-            current_staff = reservation['staff']
-            available_staff = []
-            for staff_id, staff_data in self.staff_members.items():
-                staff_name = staff_data.get("name", staff_id)
-                if staff_name != current_staff:
-                    available_staff.append(staff_name)
-            
-            staff_list = "\n".join([f"• {staff}" for staff in available_staff])
-            
-            # Update user state to wait for staff selection
-            self.user_states[user_id]["step"] = "modify_staff_select"
-            
-            return f"""担当者を選択してください
+        # This method should only be called when multiple staff are available
+        # (since the menu option is hidden when there's only one staff)
+        
+        # Multiple staff members - show selection
+        current_staff = reservation['staff']
+        available_staff = []
+        for staff_id, staff_data in self.staff_members.items():
+            staff_name = staff_data.get("name", staff_id)
+            if staff_name != current_staff:
+                available_staff.append(staff_name)
+        
+        staff_list = "\n".join([f"• {staff}" for staff in available_staff])
+        
+        # Update user state to wait for staff selection
+        self.user_states[user_id]["step"] = "modify_staff_select"
+        
+        return f"""担当者を選択してください
 
 📋 利用可能な担当者：
 {staff_list}
