@@ -27,7 +27,7 @@
   },
   "staff": {
     "staff_1": {
-      "name": "田中",
+      "name": "test user",
       "specialty": "カット・カラー",
       "experience": "5年",
       "email_env": "STAFF_TANAKA_EMAIL",
