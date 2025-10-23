@@ -2,7 +2,7 @@
 ChatGPT-powered FAQ system for natural language responses using KB facts
 """
 import os
-import openai
+from openai import OpenAI
 from typing import Optional
 
 class ChatGPTFAQ:
@@ -10,7 +10,7 @@ class ChatGPTFAQ:
         # Initialize client only if API key is available
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
-            self.client = openai.OpenAI(api_key=api_key)
+            self.client = OpenAI(api_key=api_key)
             self.api_available = True
         else:
             self.client = None
@@ -60,14 +60,11 @@ class ChatGPTFAQ:
                 return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
             
             # Check if we have a processed answer from RAG FAQ (template-based response)
-            if kb_facts and isinstance(kb_facts, dict):
-                processed_answer = kb_facts.get('processed_answer')
-                if processed_answer:
-                    return processed_answer
+            
             
             # If API is not available, use fallback immediately
             if not self.api_available:
-                return self._generate_fallback_response(kb_facts)
+                return self._generate_fallback_response()
             
             # Build context from KB facts
             context = ""
@@ -81,143 +78,21 @@ class ChatGPTFAQ:
                         context += f"- {key}: {value}\n"
                     context += "\n上記の事実情報を必ず使用して回答してください。"
             
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": self.system_prompt + context},
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=500,
-                temperature=0.3  # Lower temperature for more consistent responses
+            response = self.clinet.responses.create(
+                model="gpt-4-turbo",
+                instructions = "You are a helpful assistant that can answer questions about the salon.",
+                input=self.system_prompt + context + "\n\n" + user_message
             )
             
-            return response.choices[0].message.content.strip()
+            return response.output_text.strip()
             
         except Exception as e:
             print(f"ChatGPT API error: {e}")
             # Fallback: if we have KB facts, provide a simple response
-            return self._generate_fallback_response(kb_facts)
+            return self._generate_fallback_response()
     
-    def _generate_fallback_response(self, kb_facts: Optional[dict] = None) -> str:
+    def _generate_fallback_response(self) -> str:
         """Generate a fallback response using KB facts when ChatGPT API is not available"""
-        if kb_facts:
-            facts_dict = kb_facts.get('kb_facts', kb_facts) if isinstance(kb_facts, dict) else {}
-            if facts_dict:
-                # Create a comprehensive response using KB facts
-                response_parts = []
-                
-                # Group related information for better responses
-                basic_info = []
-                business_hours = []
-                payment_info = []
-                access_info = []
-                staff_info = []
-                policy_info = []
-                
-                for key, value in facts_dict.items():
-                    # Basic information
-                    if key == 'SALON_NAME':
-                        basic_info.append(f"店名は{value}です。")
-                    elif key == 'ADDRESS':
-                        basic_info.append(f"住所は{value}です。")
-                    elif key == 'PHONE':
-                        basic_info.append(f"お電話は{value}までお願いいたします。")
-                    elif key == 'SNS':
-                        basic_info.append(f"SNSアカウントは{value}です。")
-                    
-                    # Business hours
-                    elif key == 'BUSINESS_HOURS_WEEKDAY':
-                        business_hours.append(f"平日の営業時間は{value}です。")
-                    elif key == 'BUSINESS_HOURS_WEEKEND':
-                        business_hours.append(f"土日祝の営業時間は{value}です。")
-                    elif key == 'HOLIDAY':
-                        business_hours.append(f"定休日は{value}です。")
-                    elif key == 'BUSY_TIMES':
-                        business_hours.append(f"混雑目安は{value}です。")
-                    elif key == 'SAME_DAY_BOOKING':
-                        business_hours.append(f"当日予約は{value}です。")
-                    
-                    # Payment information
-                    elif key == 'PAYMENTS':
-                        payment_info.append(f"支払い方法は{value}です。")
-                    elif key == 'RECEIPT_ISSUE':
-                        payment_info.append(f"領収書は{value}です。")
-                    elif key == 'PRICE_INCLUDE_TAX':
-                        payment_info.append(f"価格は{value}です。")
-                    elif key == 'COUPON_COMBINATION':
-                        payment_info.append(f"クーポン併用は{value}です。")
-                    elif key == 'NEW_CUSTOMER_COUPON':
-                        payment_info.append(f"新規クーポンは{value}です。")
-                    elif key == 'POINT_SYSTEM':
-                        payment_info.append(f"ポイントシステムは{value}です。")
-                    
-                    # Access information
-                    elif key == 'ACCESS_STATION':
-                        access_info.append(f"最寄り駅は{value}です。")
-                    elif key == 'ACCESS_DETAIL':
-                        access_info.append(f"詳細なアクセス方法は{value}です。")
-                    elif key == 'PARKING':
-                        access_info.append(f"駐車場は{value}です。")
-                    elif key == 'BARRIER_FREE':
-                        access_info.append(f"バリアフリー対応は{value}です。")
-                    elif key == 'CHILDREN_WELCOME':
-                        access_info.append(f"子連れ対応は{value}です。")
-                    elif key == 'PET_POLICY':
-                        access_info.append(f"ペット対応は{value}です。")
-                    elif key == 'LOST_DIRECTION_HELP':
-                        access_info.append(f"道に迷った場合は{value}です。")
-                    
-                    # Staff information
-                    elif key in ['STAFF_AYAKA', 'STAFF_KENTO', 'STAFF_MIKU']:
-                        staff_info.append(f"{value}です。")
-                    elif key == 'STAFF_REQUEST_FEE':
-                        staff_info.append(f"指名料は{value}です。")
-                    elif key == 'PHOTO_REFERENCE':
-                        staff_info.append(f"写真持ち込みは{value}です。")
-                    
-                    # Policy information
-                    elif key == 'CANCEL_POLICY':
-                        policy_info.append(f"キャンセル規定は{value}です。")
-                    elif key == 'ALLERGY_CARE':
-                        policy_info.append(f"アレルギー対応は{value}です。")
-                    elif key == 'PREGNANCY_CARE':
-                        policy_info.append(f"妊娠中対応は{value}です。")
-                    elif key == 'SATISFACTION_GUARANTEE':
-                        policy_info.append(f"仕上がり保証は{value}です。")
-                    elif key == 'VISIT_INTERVAL':
-                        policy_info.append(f"来店間隔は{value}です。")
-                    elif key == 'BRING_OWN_PRODUCTS':
-                        policy_info.append(f"持ち込み薬剤は{value}です。")
-                    
-                    # Booking information
-                    elif key == 'BOOKING_METHOD':
-                        policy_info.append(f"予約方法は{value}です。")
-                    elif key == 'CHANGE_POLICY':
-                        policy_info.append(f"変更ポリシーは{value}です。")
-                    elif key == 'NOTIFICATION_SYSTEM':
-                        policy_info.append(f"通知システムは{value}です。")
-                    
-                    # Other information
-                    else:
-                        # For any other keys, include them as general information
-                        response_parts.append(f"{value}です。")
-                
-                # Combine information by category for better organization
-                if basic_info:
-                    response_parts.extend(basic_info)
-                if business_hours:
-                    response_parts.extend(business_hours)
-                if payment_info:
-                    response_parts.extend(payment_info)
-                if access_info:
-                    response_parts.extend(access_info)
-                if staff_info:
-                    response_parts.extend(staff_info)
-                if policy_info:
-                    response_parts.extend(policy_info)
-                
-                if response_parts:
-                    return " ".join(response_parts)
         
         return "申し訳ございませんが、現在システムの調子が悪いようです。しばらくしてから再度お試しください。"
     

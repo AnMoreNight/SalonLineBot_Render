@@ -1,6 +1,6 @@
 """
 RAG-FAQ system that only uses KB data as the source of truth
-Lightweight version for Vercel deployment
+Direct KB-based approach without FAQ dependency
 """
 import json
 import os
@@ -8,52 +8,13 @@ import re
 from typing import List, Dict, Any, Optional
 
 class RAGFAQ:
-    def __init__(self, faq_data_path: str = "api/data/faq_data.json", kb_data_path: str = "api/data/kb.json"):
-        self.faq_data = self._load_faq_data(faq_data_path)
+    def __init__(self, kb_data_path: str = "api/data/kb.json"):
         self.kb_data = self._load_kb_data(kb_data_path)
-        self._build_keyword_index()
+        self.kb_index = self._build_kb_index()
     
-    def _load_faq_data(self, path: str) -> List[Dict[str, Any]]:
-        """Load FAQ data from JSON file"""
-        try:
-            # Try multiple possible paths for different deployment environments
-            possible_paths = []
-            
-            if os.path.isabs(path):
-                possible_paths.append(path)
-            else:
-                # Remove 'api/' prefix if present
-                clean_path = path.replace('api/', '')
-                
-                # Try different base directories
-                base_dirs = [
-                    os.path.dirname(os.path.abspath(__file__)),  # Current module directory
-                    os.getcwd(),  # Current working directory
-                    os.path.join(os.getcwd(), 'api'),  # api subdirectory of working directory
-                ]
-                
-                for base_dir in base_dirs:
-                    possible_paths.append(os.path.join(base_dir, clean_path))
-                    # Also try with 'api/' prefix
-                    possible_paths.append(os.path.join(base_dir, path))
-            
-            # Try each possible path
-            for full_path in possible_paths:
-                try:
-                    with open(full_path, 'r', encoding='utf-8') as f:
-                        return json.load(f)
-                except (FileNotFoundError, OSError):
-                    continue
-            
-            # If none of the paths worked, raise an error
-            raise FileNotFoundError(f"Could not find FAQ data file. Tried paths: {possible_paths}")
-            
-        except Exception as e:
-            print(f"Error loading FAQ data from {path}: {e}")
-            return []
     
-    def _load_kb_data(self, path: str) -> Dict[str, str]:
-        """Load KB data from JSON file and convert to key-value mapping"""
+    def _load_kb_data(self, path: str) -> Dict[str, Dict[str, str]]:
+        """Load KB data from JSON file and return full structure"""
         try:
             # Try multiple possible paths for different deployment environments
             possible_paths = []
@@ -81,73 +42,59 @@ class RAGFAQ:
                     if 'kb.json' in path:
                         possible_paths.append(os.path.join(base_dir, path.replace('kb.json', 'KB.json')))
             
-            # Debug: Print all attempted paths and their status
-            print(f"DEBUG: Attempting to load KB data from {path}")
-            for full_path in possible_paths:
-                exists = os.path.exists(full_path)
-                is_file = os.path.isfile(full_path) if exists else False
-                print(f"DEBUG: Path: {full_path} - Exists: {exists}, IsFile: {is_file}")
-            
             # Try each possible path
             for full_path in possible_paths:
                 try:
                     if not os.path.exists(full_path):
-                        print(f"DEBUG: Path does not exist: {full_path}")
                         continue
                     
                     if not os.path.isfile(full_path):
-                        print(f"DEBUG: Path is not a file: {full_path}")
                         continue
                     
-                    print(f"DEBUG: Attempting to open: {full_path}")
                     with open(full_path, 'r', encoding='utf-8') as f:
                         kb_list = json.load(f)
                     
-                    print(f"DEBUG: Successfully loaded KB data from: {full_path}")
-                    
-                    # Convert list of dicts to key-value mapping
+                    # Convert list of dicts to key-based mapping with full data
                     kb_dict = {}
                     for item in kb_list:
                         key = item.get('キー', '')
                         value = item.get('例（置換値）', '')
+                        note = item.get('備考', '')
                         if key and value:
-                            kb_dict[key] = value
+                            kb_dict[key] = {
+                                'value': value,
+                                'note': note
+                            }
                     
                     return kb_dict
-                except (FileNotFoundError, OSError) as e:
-                    print(f"DEBUG: Failed to load from {full_path}: {e}")
-                    continue
-                except json.JSONDecodeError as e:
-                    print(f"DEBUG: JSON decode error from {full_path}: {e}")
+                except (FileNotFoundError, OSError, json.JSONDecodeError):
                     continue
             
-            # If none of the paths worked, raise an error
-            raise FileNotFoundError(f"Could not find KB data file. Tried paths: {possible_paths}")
+            # If none of the paths worked, return empty dict
+            print(f"Warning: Could not load KB data from {path}")
+            return {}
             
         except Exception as e:
             print(f"Error loading KB data from {path}: {e}")
             return {}
     
-    def _build_keyword_index(self):
-        """Build lightweight keyword index for FAQ questions"""
-        if not self.faq_data:
-            return
+    def _build_kb_index(self) -> Dict[str, List[str]]:
+        """Build keyword index for KB data based on Japanese notes"""
+        kb_index = {}
         
-        self.keyword_index = []
-        for item in self.faq_data:
-            question = item.get('question', '').lower()
-            answer_template = item.get('answer_template', '').lower()
+        for key, data in self.kb_data.items():
+            note = data.get('note', '').lower()
+            value = data.get('value', '').lower()
             
-            # Extract keywords from question and answer
-            keywords = self._extract_keywords(question + ' ' + answer_template)
+            # Extract keywords from Japanese note and value
+            keywords = self._extract_keywords(note + ' ' + value)
             
-            self.keyword_index.append({
-                'item': item,
-                'keywords': keywords,
-                'question': question,
-                'answer_template': answer_template,
-                'category': item.get('category', '')
-            })
+            # Add English key as keyword too
+            keywords.append(key.lower())
+            
+            kb_index[key] = keywords
+        
+        return kb_index
     
     def _extract_keywords(self, text: str) -> List[str]:
         """Extract keywords from text for matching"""
@@ -203,97 +150,123 @@ class RAGFAQ:
     
     def search(self, query: str, threshold: float = 0.2) -> Optional[Dict[str, Any]]:
         """
-        Search for KB facts using lightweight keyword matching
+        Search for KB facts using Japanese query to English key mapping
         Returns None if no good match found (KB only approach)
         """
-        if not self.faq_data or not hasattr(self, 'keyword_index'):
+        if not self.kb_data or not self.kb_index:
             return None
         
         query_lower = query.lower()
         query_keywords = self._extract_keywords(query_lower)
         
-        best_match = None
+        best_match_key = None
         best_score = 0
         
-        for index_item in self.keyword_index:
-            # Skip questions in "答えないテスト" category unless it's an exact match
-            if index_item.get('category') == '（答えないテスト）':
-                # Only allow exact matches for dangerous questions
-                if query_lower.strip('？?') != index_item['question'].lower().strip('？?'):
-                    continue
+        # Search through KB index
+        for key, keywords in self.kb_index.items():
+            # Calculate keyword overlap score
+            overlap = len(set(query_keywords) & set(keywords))
             
-            # Calculate improved keyword overlap score
-            overlap = len(set(query_keywords) & set(index_item['keywords']))
-            
-            # Use min length instead of union to avoid penalizing short queries
-            min_length = min(len(query_keywords), len(index_item['keywords']))
+            # Use min length to avoid penalizing short queries
+            min_length = min(len(query_keywords), len(keywords))
             
             if min_length > 0:
                 score = overlap / min_length
                 
-                # Check for exact question match first
-                is_exact_match = query_lower.strip('？?') == index_item['question'].lower().strip('？?')
+                # Bonus for direct text matches in note or value
+                kb_data = self.kb_data[key]
+                note = kb_data.get('note', '').lower()
+                value = kb_data.get('value', '').lower()
                 
-                if is_exact_match:
-                    score = 2.0  # Higher score for exact matches to ensure they rank first
-                else:
-                    # Bonus for direct text matches (only for non-exact matches)
-                    if any(keyword in index_item['question'] for keyword in query_keywords):
-                        score += 0.3
+                # Check if query keywords appear in note or value
+                if any(keyword in note for keyword in query_keywords):
+                    score += 0.3
+                if any(keyword in value for keyword in query_keywords):
+                    score += 0.2
                 
-                # Penalty for dangerous categories (only if not exact match)
-                if index_item.get('category') == '（答えないテスト）' and not is_exact_match:
-                    score *= 0.1  # Heavy penalty for non-exact matches
+                # Check for dangerous queries (medical, pricing, etc.)
+                if self._is_dangerous_query(query_lower):
+                    score *= 0.1  # Heavy penalty for dangerous queries
                 
                 if score > best_score:
                     best_score = score
-                    best_match = index_item
+                    best_match_key = key
         
         # Only return if similarity is above threshold
-        if best_match and best_score >= threshold:
-            faq_item = best_match['item']
+        if best_match_key and best_score >= threshold:
+            kb_data = self.kb_data[best_match_key]
             
-            # Extract KB facts (replace placeholders with actual data)
-            kb_facts = self._extract_kb_facts(faq_item)
-            
-            # Process template to get final answer
-            processed_answer = self._process_template(faq_item, kb_facts)
+            # Create response based on KB data
+            response = self._create_response(best_match_key, kb_data, query)
             
             return {
-                'faq_item': faq_item,
+                'kb_key': best_match_key,
                 'similarity_score': float(best_score),
-                'kb_facts': kb_facts,
-                'category': faq_item.get('category', ''),
-                'question': faq_item.get('question', ''),
-                'processed_answer': processed_answer
+                'kb_facts': {best_match_key: kb_data['value']},
+                'category': self._get_category(best_match_key),
+                'question': query,
+                'processed_answer': response
             }
         
         return None
 
-    def _extract_kb_facts(self, faq_item: Dict[str, Any]) -> Dict[str, str]:
-        """Extract KB facts from FAQ item with actual salon data"""
-        answer_template = faq_item.get('answer_template', '')
+    def _create_response(self, key: str, kb_data: Dict[str, str], query: str) -> str:
+        """Create natural Japanese response based on KB data"""
+        value = kb_data['value']
+        note = kb_data['note']
         
-        # Replace placeholders with actual KB data
-        kb_facts = {}
-        for key, value in self.kb_data.items():
-            if f'{{{key}}}' in answer_template:
-                kb_facts[key] = value
-        
-        return kb_facts
+        # Create contextual responses based on the type of information
+        if key in ['SALON_NAME']:
+            return f"店名は「{value}」です。"
+        elif key in ['ADDRESS']:
+            return f"住所は「{value}」です。"
+        elif key in ['PHONE']:
+            return f"お電話は「{value}」までお願いいたします。"
+        elif key in ['ACCESS_STATION']:
+            return f"最寄りは「{value}」です。"
+        elif key in ['BUSINESS_HOURS_WEEKDAY', 'BUSINESS_HOURS_WEEKEND']:
+            return f"営業時間は「{value}」です。"
+        elif key in ['HOLIDAY']:
+            return f"定休日は「{value}」です。"
+        elif key in ['PARKING']:
+            return f"駐車場は「{value}」です。"
+        elif key in ['PAYMENTS']:
+            return f"支払い方法は「{value}」です。"
+        elif key in ['CANCEL_POLICY']:
+            return f"キャンセル規定は「{value}」です。"
+        elif key in ['ALLERGY_CARE', 'PREGNANCY_CARE']:
+            return f"安全のため、{value}。詳細はスタッフにお繋ぎします。"
+        else:
+            # Generic response for other keys
+            return f"{value}です。"
     
-    def _process_template(self, faq_item: Dict[str, Any], kb_facts: Dict[str, str]) -> str:
-        """Process the FAQ template with KB facts to generate the final answer"""
-        answer_template = faq_item.get('answer_template', '')
+    def _get_category(self, key: str) -> str:
+        """Get category for KB key"""
+        category_map = {
+            'SALON_NAME': '基本情報',
+            'ADDRESS': '基本情報', 
+            'PHONE': '基本情報',
+            'ACCESS_STATION': 'アクセス',
+            'BUSINESS_HOURS_WEEKDAY': '営業時間',
+            'BUSINESS_HOURS_WEEKEND': '営業時間',
+            'HOLIDAY': '営業時間',
+            'PARKING': 'アクセス',
+            'PAYMENTS': '支払い',
+            'CANCEL_POLICY': '予約',
+            'ALLERGY_CARE': '安全',
+            'PREGNANCY_CARE': '安全'
+        }
+        return category_map.get(key, 'その他')
+    
+    def _is_dangerous_query(self, query: str) -> bool:
+        """Check if query is in dangerous areas that need human guidance"""
+        dangerous_keywords = [
+            "薬", "薬剤", "治療", "診断", "病気", "症状", "副作用",
+            "アレルギー", "妊娠", "授乳", "医療", "医師", "病院",
+            "競合", "他店", "安く", "値下げ", "割引"
+        ]
         
-        # Replace placeholders with actual KB data
-        processed_answer = answer_template
-        for key, value in kb_facts.items():
-            placeholder = f'{{{key}}}'
-            if placeholder in processed_answer:
-                processed_answer = processed_answer.replace(placeholder, value)
-        
-        return processed_answer
+        return any(keyword in query for keyword in dangerous_keywords)
 
     def get_kb_facts(self, user_message: str) -> Optional[Dict[str, Any]]:
         """
