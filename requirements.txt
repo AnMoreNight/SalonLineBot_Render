@@ -11,3 +11,4 @@ gspread
 oauth2client
 pytz
 schedule
+faiss-cpu
