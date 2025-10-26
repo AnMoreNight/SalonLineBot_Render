@@ -24,19 +24,20 @@ SalonAI LINE Botは以下の機能を提供する高度な予約管理システ�
 - **AI搭載FAQシステム**: RAG（検索拡張生成）+ ChatGPT統合
 - **予約管理**: Googleカレンダー同期による予約の作成、変更、キャンセル
 - **マルチプラットフォーム通知**: 管理者向けSlack・LINE通知
-- **自動リマインダー**: 翌日予約の自動リマインダーシステム
 - **ユーザー同意管理**: GDPR準拠のユーザー同意追跡
 - **包括的ログ**: 全インタラクションのGoogleスプレッドシート記録
 
 ## 機能
 
 ### 🤖 AI搭載FAQシステム
+
 - **RAGシステム**: KBデータとのキーワードベースマッチング
 - **ChatGPT統合**: 自然言語応答
 - **フォールバックシステム**: API利用不可時の直接KB応答
 - **テンプレート処理**: KB事実からの動的回答生成
 
 ### 📅 予約管理
+
 - **予約作成**: 日付、時間、サービス、スタッフ選択
 - **予約変更**: 日付、時間、サービス、スタッフの変更
 - **予約キャンセル**: カレンダー同期による完全キャンセル
@@ -45,18 +46,13 @@ SalonAI LINE Botは以下の機能を提供する高度な予約管理システ�
 - **競合防止**: 重複予約と時間競合の防止
 
 ### 🔔 通知システム
+
 - **マルチプラットフォーム**: Slack・LINE通知
 - **設定可能**: 環境変数による通知方法選択
 - **管理者通知**: ユーザーログイン、予約確認、変更、キャンセル
-- **リマインダー状況**: 日次リマインダー実行レポート
-
-### ⏰ 自動リマインダー
-- **日次リマインダー**: 設定可能時間（デフォルト: 9:00）でのリマインダー送信
-- **東京タイムゾーン**: 全時間をAsia/Tokyoタイムゾーンで計算
-- **管理者レポート**: 成功/失敗状況通知
-- **Cron統合**: 外部cronジョブサポート
 
 ### 📊 データ管理
+
 - **Googleスプレッドシート統合**: 包括的ログとユーザー管理
 - **ユーザー追跡**: セッション管理と同意追跡
 - **予約履歴**: 完全な予約ライフサイクル追跡
@@ -79,14 +75,15 @@ SalonAI LINE Botは以下の機能を提供する高度な予約管理システ�
                        │                                │                                │
                        ▼                                ▼                                ▼
               ┌─────────────────┐              ┌─────────────────┐              ┌─────────────────┐
-              │   OpenAI API    │              │   リマインダー   │              │   ユーザーセッション│
-              │   （ChatGPT）   │              │   スケジューラー │              │   管理          │
+              │   OpenAI API    │              │                 │              │   ユーザーセッション│
+              │   （ChatGPT）   │              │                 │              │   管理          │
               └─────────────────┘              └─────────────────┘              └─────────────────┘
 ```
 
 ## 前提条件
 
 ### 必要なアカウント・サービス
+
 1. **LINE Developerアカウント**: LINE Bot認証情報用
 2. **Google Cloud Platform**: カレンダー・スプレッドシートAPI用
 3. **OpenAIアカウント**: ChatGPT統合用（オプション）
@@ -94,6 +91,7 @@ SalonAI LINE Botは以下の機能を提供する高度な予約管理システ�
 5. **Renderアカウント**: デプロイメント用（または任意のクラウドプラットフォーム）
 
 ### 必要な認証情報
+
 - LINE Channel Access Token
 - LINE Channel Secret
 - Google Service Account JSON（カレンダー + スプレッドシート）
@@ -104,12 +102,14 @@ SalonAI LINE Botは以下の機能を提供する高度な予約管理システ�
 ## インストール・セットアップ
 
 ### 1. リポジトリのクローン
+
 ```bash
 git clone <repository-url>
 cd salonLineBot
 ```
 
 ### 2. 依存関係のインストール
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -117,6 +117,7 @@ pip install -r requirements.txt
 ### 3. Google Cloudセットアップ
 
 #### カレンダーAPI
+
 1. [Google Cloud Console](https://console.cloud.google.com/)にアクセス
 2. 新しいプロジェクトを作成または既存を選択
 3. Google Calendar APIを有効化
@@ -125,6 +126,7 @@ pip install -r requirements.txt
 6. カレンダーをサービスアカウントメールと共有
 
 #### スプレッドシートAPI
+
 1. 同じプロジェクトでGoogle Sheets APIを有効化
 2. 同じサービスアカウントを使用
 3. ログ用のGoogleスプレッドシートを作成
@@ -132,6 +134,7 @@ pip install -r requirements.txt
 5. URLからSheet IDをコピー
 
 ### 4. LINE Botセットアップ
+
 1. [LINE Developers Console](https://developers.line.biz/)にアクセス
 2. 新しいプロバイダーとチャンネルを作成
 3. チャンネルタイプを「Messaging API」に設定
@@ -139,6 +142,7 @@ pip install -r requirements.txt
 5. ウェブフックURLを設定（デプロイ後）
 
 ### 5. OpenAIセットアップ（オプション）
+
 1. [OpenAI Platform](https://platform.openai.com/)にアクセス
 2. APIキーを作成
 3. 請求情報を追加
@@ -147,27 +151,29 @@ pip install -r requirements.txt
 
 ### 必須変数
 
-| 変数名 | 説明 | 例 |
-|--------|------|-----|
-| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot Channel Access Token | `abc123...` |
-| `LINE_CHANNEL_SECRET` | LINE Bot Channel Secret | `def456...` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Service Account JSON | `{"type": "service_account"...}` |
-| `GOOGLE_SHEET_ID` | ログ用Google Sheet ID | `1ABC...XYZ` |
+| 変数名                          | 説明                          | 例                                 |
+| ------------------------------- | ----------------------------- | ---------------------------------- |
+| `LINE_CHANNEL_ACCESS_TOKEN`   | LINE Bot Channel Access Token | `abc123...`                      |
+| `LINE_CHANNEL_SECRET`         | LINE Bot Channel Secret       | `def456...`                      |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Service Account JSON   | `{"type": "service_account"...}` |
+| `GOOGLE_SHEET_ID`             | ログ用Google Sheet ID         | `1ABC...XYZ`                     |
 
 ### オプション変数
 
-| 変数名 | 説明 | デフォルト | 例 |
-|--------|------|-----------|-----|
-| `OPENAI_API_KEY` | ChatGPT用OpenAI APIキー | None | `sk-...` |
-| `SLACK_WEBHOOK_URL` | SlackウェブフックURL | None | `https://hooks.slack.com/...` |
-| `LINE_CHANNEL_ACCESS_TOKEN_MANAGER` | 管理者通知用LINEトークン | None | `abc123...` |
-| `NOTIFICATION_METHOD` | 通知方法 | `slack` | `slack`, `line`, `both` |
-| `GOOGLE_CALENDAR_ID` | GoogleカレンダーID | プライマリカレンダー | `primary` |
+| 変数名                                | 説明                     | デフォルト           | 例                              |
+| ------------------------------------- | ------------------------ | -------------------- | ------------------------------- |
+| `OPENAI_API_KEY`                    | ChatGPT用OpenAI APIキー  | None                 | `sk-...`                      |
+| `SLACK_WEBHOOK_URL`                 | SlackウェブフックURL     | None                 | `https://hooks.slack.com/...` |
+| `LINE_CHANNEL_ACCESS_TOKEN_MANAGER` | 管理者通知用LINEトークン | None                 | `abc123...`                   |
+| `NOTIFICATION_METHOD`               | 通知方法                 | `slack`            | `slack`, `line`, `both`   |
+| `GOOGLE_CALENDAR_ID`                | GoogleカレンダーID       | プライマリカレンダー | `primary`                     |
 
 ### 環境変数セットアップ
 
 #### ローカル開発
+
 `.env`ファイルを作成：
+
 ```env
 LINE_CHANNEL_ACCESS_TOKEN=your_line_token
 LINE_CHANNEL_SECRET=your_line_secret
@@ -179,7 +185,9 @@ NOTIFICATION_METHOD=slack
 ```
 
 #### 本番環境（Render）
+
 Renderダッシュボードで環境変数を追加：
+
 1. サービス設定に移動
 2. 「Environment」タブに移動
 3. 各変数とその値を追加
@@ -189,31 +197,33 @@ Renderダッシュボードで環境変数を追加：
 ### Renderデプロイメント
 
 1. **リポジトリ接続**:
+
    - [Render Dashboard](https://dashboard.render.com)にアクセス
    - 「New +」→「Web Service」をクリック
    - GitHubを接続し、リポジトリを選択
-
 2. **サービス設定**:
+
    - **名前**: `salon-line-bot`
    - **環境**: `Python 3`
    - **ビルドコマンド**: `pip install -r requirements.txt`
    - **開始コマンド**: `python -m uvicorn api.index:app --host 0.0.0.0 --port $PORT`
-
 3. **環境変数設定**:
+
    - すべての必須環境変数を追加
    - JSON値が正しくフォーマットされていることを確認
-
 4. **デプロイ**:
+
    - 「Create Web Service」をクリック
    - デプロイ完了を待つ
-
 5. **ウェブフック設定**:
+
    - サービスURLをコピー
    - LINE Developers ConsoleでウェブフックURLを設定: `https://your-service.onrender.com/api/callback`
 
 ### 代替デプロイメントプラットフォーム
 
 #### Heroku
+
 ```bash
 # Heroku CLIをインストール
 # Procfileを作成（既に含まれています）
@@ -222,6 +232,7 @@ git push heroku main
 ```
 
 #### Railway
+
 ```bash
 # Railway CLIをインストール
 # リポジトリを接続
@@ -233,16 +244,15 @@ git push heroku main
 
 ### コアエンドポイント
 
-| エンドポイント | メソッド | 説明 |
-|---------------|----------|------|
-| `/` | GET | ヘルスチェック |
-| `/api/callback` | POST | LINE Botウェブフック |
-| `/api/run-reminders` | POST | リマインダーシステム実行 |
-| `/api/reminder-status` | GET | リマインダーシステム状況確認 |
+| エンドポイント           | メソッド | 説明                         |
+| ------------------------ | -------- | ---------------------------- |
+| `/`                    | GET      | ヘルスチェック               |
+| `/api/callback`        | POST     | LINE Botウェブフック         |
 
 ### ウェブフックエンドポイント詳細
 
 #### `/api/callback` (POST)
+
 - **目的**: LINE Botイベント受信
 - **認証**: LINE署名検証
 - **処理イベント**:
@@ -250,28 +260,22 @@ git push heroku main
   - `FollowEvent`: ユーザーがボットを友達追加
   - `PostbackEvent`: ボタンインタラクション
 
-#### `/api/run-reminders` (POST)
-- **目的**: 外部cronジョブトリガー
-- **認証**: なし（APIキー追加を検討）
-- **レスポンス**: 実行結果のJSON
-
 ## 設定ファイル
 
 ### `/api/data/kb.json`
+
 サロン情報を含むナレッジベース：
+
 ```json
 {
-  "SALON_NAME": "SalonAI 表参道店",
-  "PHONE": "03-1234-5678",
-  "BUSINESS_HOURS_WEEKDAY": "10:00-20:00",
-  "BUSINESS_HOURS_WEEKEND": "10:00-19:00",
-  "CANCEL_POLICY": "来店2時間前まで無料",
-  "REMIND_TIME": "09:00"
+  "キー": "SalonAI 表参道店",
 }
 ```
 
 ### `/api/data/services.json`
+
 サービスとスタッフ設定：
+
 ```json
 {
   "services": {
@@ -290,7 +294,9 @@ git push heroku main
 ```
 
 ### `/api/data/faq_data.json`
+
 FAQ質問とテンプレート：
+
 ```json
 {
   "question": "営業時間は？",
@@ -301,7 +307,9 @@ FAQ質問とテンプレート：
 ```
 
 ### `/api/data/keywords.json`
+
 インテント検出キーワード：
+
 ```json
 {
   "intent_keywords": {
@@ -315,26 +323,31 @@ FAQ質問とテンプレート：
 ## ユーザーフロー
 
 ### 1. 新規ユーザーフロー
+
 ```
 ユーザーがボットを友達追加 → FollowEvent → 同意画面 → ユーザーが同意 → ウェルカムメッセージ
 ```
 
 ### 2. 予約フロー
+
 ```
 ユーザー: "予約したい" → 日付選択 → 時間選択 → サービス選択 → スタッフ選択 → 確認 → カレンダーイベント作成
 ```
 
 ### 3. 変更フロー
+
 ```
 ユーザー: "予約変更したい" → 予約選択 → フィールド選択（日付/時間/サービス/スタッフ） → 新選択 → 確認 → カレンダー更新
 ```
 
 ### 4. FAQフロー
+
 ```
 ユーザー: "営業時間は？" → RAG検索 → KB事実 → テンプレート処理 → 応答
 ```
 
 ### 5. 再予約フロー
+
 ```
 ユーザー: "複数項目変更したい" → 確認 → 現在の予約をキャンセル → 新規予約作成
 ```
@@ -344,36 +357,37 @@ FAQ質問とテンプレート：
 ### よくある問題
 
 #### 1. "Error loading KB data: No such file or directory"
+
 **原因**: 異なる環境でのファイルパス問題
-**解決方法**: 
+**解決方法**:
+
 - `/api/data/`にファイルが存在することを確認
 - 大文字小文字の区別を確認（Linux vs Windows）
 - ファイル権限を確認
 
 #### 2. "Google Calendar API error"
+
 **原因**: 認証または権限問題
 **解決方法**:
+
 - サービスアカウントJSONフォーマットを確認
 - サービスアカウントとのカレンダー共有を確認
 - Calendar APIが有効化されていることを確認
 
 #### 3. "LINE webhook verification failed"
+
 **原因**: 不正なウェブフックURLまたは署名
 **解決方法**:
+
 - ウェブフックURLフォーマットを確認
 - LINE_CHANNEL_SECRETを確認
 - HTTPSが使用されていることを確認
 
-#### 4. "リマインダーシステムが動作しない"
-**原因**: スケジューラーまたはタイムゾーン問題
-**解決方法**:
-- kb.jsonのREMIND_TIMEを確認
-- タイムゾーン設定を確認
-- cronジョブ設定を確認
+#### 4. "通知が送信されない"
 
-#### 5. "通知が送信されない"
 **原因**: 無効な認証情報またはウェブフックURL
 **解決方法**:
+
 - SlackウェブフックURLを確認
 - LINE Channel Access Tokenを確認
 - 通知エンドポイントをテスト
@@ -381,6 +395,7 @@ FAQ質問とテンプレート：
 ### デバッグモード
 
 デバッグログを有効化：
+
 ```python
 # api/index.pyで
 DEBUG = True
@@ -389,6 +404,7 @@ DEBUG = True
 ### ログ分析
 
 Googleスプレッドシートで以下を確認：
+
 - メッセージログ（Sheet1）
 - 予約データ（Reservationsシート）
 - ユーザーデータ（Usersシート）
@@ -396,6 +412,10 @@ Googleスプレッドシートで以下を確認：
 ## メンテナンス
 
 ### 定期タスク
+
+```
+
+```
 
 1. **ログ監視**: Googleスプレッドシートでエラーを確認
 2. **KBデータ更新**: サロン情報を最新に保つ
@@ -427,6 +447,7 @@ Googleスプレッドシートで以下を確認：
 ## サポート
 
 技術サポートの場合：
+
 1. Googleスプレッドシートのログを確認
 2. デプロイメントログのエラーメッセージを確認
 3. 個別コンポーネントをテスト

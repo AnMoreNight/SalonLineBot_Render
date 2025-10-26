@@ -5,7 +5,6 @@ Runs at 9:00 AM daily to send reservation reminders
 import os
 import time
 import logging
-import schedule
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -88,12 +87,7 @@ class ReminderScheduler:
             logging.warning(f"Could not parse time from REMIND_TIME: {remind_time}, using default: {schedule_time}")
         
         print(f"Schedule time: {schedule_time} (Tokyo timezone)")
-        
-        # Schedule reminders at the configured time (this will use system timezone)
-        # We need to handle timezone conversion in the scheduler loop
-        schedule.every().day.at(schedule_time).do(self._run_reminders)
-        
-        print(f"Reminder schedule set: Daily at {schedule_time} Tokyo time (from kb.json: {remind_time})")
+        print(f"Reminder schedule configured: Daily at {schedule_time} Tokyo time (from kb.json: {remind_time})")
     
     def _run_reminders(self):
         """Run the daily reminder process"""
@@ -132,7 +126,7 @@ class ReminderScheduler:
         
         # Get the scheduled time from kb.json
         kb_data = self._load_kb_data()
-        remind_time = kb_data.get('REMIND_TIME', '来店前日 09:00 自動配信')
+        remind_time = kb_data.get('リマインド時刻', '来店前日 09:00 自動配信')
         
         # Extract time from the string
         import re
@@ -155,7 +149,7 @@ class ReminderScheduler:
                 
                 # Check if it's time to run reminders (Tokyo time)
                 # if current_hour == scheduled_hour and current_minute == scheduled_minute:
-                if current_hour == 9 and current_minute == 00:
+                if current_hour == scheduled_hour and current_minute == scheduled_minute:
                     print(f"Tokyo time {current_tokyo_time.strftime('%H:%M')} - Running reminders...")
                     self._run_reminders()
                     time.sleep(60)

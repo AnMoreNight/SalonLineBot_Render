@@ -17,8 +17,8 @@ class RAGFAQ:
         self.kb_keys = []
         self._build_faiss_index()
     
-    def _load_kb_data(self, path: str) -> Dict[str, Dict[str, str]]:
-        """Load KB data from JSON file and return full structure"""
+    def _load_kb_data(self, path: str) -> Dict[str, str]:
+        """Load KB data from JSON file and return simple key-value mapping"""
         try:
             # Try multiple possible paths for different deployment environments
             possible_paths = []
@@ -38,7 +38,6 @@ class RAGFAQ:
                 
                 for base_dir in base_dirs:
                     possible_paths.append(os.path.join(base_dir, clean_path))
-                    # Also try with 'api/' prefix
                     possible_paths.append(os.path.join(base_dir, path))
                     # Try with uppercase KB.json (for Render deployment)
                     if 'kb.json' in clean_path:
@@ -49,26 +48,19 @@ class RAGFAQ:
             # Try each possible path
             for full_path in possible_paths:
                 try:
-                    if not os.path.exists(full_path):
-                        continue
-                    
-                    if not os.path.isfile(full_path):
+                    if not os.path.exists(full_path) or not os.path.isfile(full_path):
                         continue
                     
                     with open(full_path, 'r', encoding='utf-8') as f:
                         kb_list = json.load(f)
                     
-                    # Convert list of dicts to key-based mapping with full data
+                    # Convert list of dicts to simple key-value mapping
                     kb_dict = {}
                     for item in kb_list:
                         key = item.get('キー', '')
-                        value = item.get('例（置換値）', '')
-                        note = item.get('備考', '')
+                        value = item.get('値', '')
                         if key and value:
-                            kb_dict[key] = {
-                                'value': value,
-                                'note': note
-                            }
+                            kb_dict[key] = value
                     
                     return kb_dict
                 except (FileNotFoundError, OSError, json.JSONDecodeError):
@@ -91,26 +83,24 @@ class RAGFAQ:
         texts = []
         self.kb_keys = []
         
-        for key, data in self.kb_data.items():
-            # Create more descriptive text for better semantic matching
-            note = data['note']
-            value = data['value']
-            
-            # Create contextual text that includes common query patterns
-            if '住所' in note or 'ADDRESS' in key:
-                text = f"住所 場所 所在地 {note} {value}"
-            elif '営業時間' in note or 'BUSINESS_HOURS' in key:
-                text = f"営業時間 時間 開店 閉店 {note} {value}"
-            elif '駐車場' in note or 'PARKING' in key:
-                text = f"駐車場 パーキング 車 {note} {value}"
-            elif '支払い' in note or 'PAYMENTS' in key:
-                text = f"支払い 支払 決済 現金 クレジット {note} {value}"
-            elif '予約' in note or 'BOOKING' in key:
-                text = f"予約 予約方法 予約する {note} {value}"
-            elif 'キャンセル' in note or 'CANCEL' in key:
-                text = f"キャンセル 取消 取り消し {note} {value}"
+        for key, value in self.kb_data.items():
+            # Create contextual text for better semantic matching
+            if '住所' in key:
+                text = f"住所 場所 所在地 {key} {value}"
+            elif '営業時間' in key:
+                text = f"営業時間 時間 開店 閉店 {key} {value}"
+            elif '駐車場' in key:
+                text = f"駐車場 パーキング 車 {key} {value}"
+            elif '支払い' in key:
+                text = f"支払い 支払 決済 現金 クレジット {key} {value}"
+            elif '予約' in key:
+                text = f"予約 予約方法 予約する {key} {value}"
+            elif 'キャンセル' in key:
+                text = f"キャンセル 取消 取り消し {key} {value}"
+            elif 'SNS' in key or 'sns' in key.lower():
+                text = f"SNS ソーシャル 公式 アカウント LINE Instagram {key} {value}"
             else:
-                text = f"{note} {value}"
+                text = f"{key} {value}"
             
             texts.append(text)
             self.kb_keys.append(key)
@@ -129,7 +119,7 @@ class RAGFAQ:
     def search(self, query: str, threshold: float = 0.5) -> Optional[Dict[str, Any]]:
         """
         Search using FAISS semantic similarity
-        Returns None if no good match found (KB only approach)
+        Returns None if no good match found
         """
         if not self.index or not self.kb_data:
             return None
@@ -146,13 +136,13 @@ class RAGFAQ:
             best_key = self.kb_keys[best_idx]
             best_score = float(scores[0][0])
             
-            kb_data = self.kb_data[best_key]
-            response = self._create_response(best_key, kb_data, query)
+            kb_value = self.kb_data[best_key]
+            response = self._create_response(best_key, kb_value, query)
             
             return {
                 'kb_key': best_key,
                 'similarity_score': best_score,
-                'kb_facts': {best_key: kb_data['value']},
+                'kb_facts': {best_key: kb_value},
                 'category': self._get_category(best_key),
                 'question': query,
                 'processed_answer': response
@@ -160,53 +150,53 @@ class RAGFAQ:
         
         return None
 
-    def _create_response(self, key: str, kb_data: Dict[str, str], query: str) -> str:
+    def _create_response(self, key: str, value: str, query: str) -> str:
         """Create natural Japanese response based on KB data"""
-        value = kb_data['value']
-        note = kb_data['note']
-        
         # Create contextual responses based on the type of information
-        if key in ['SALON_NAME']:
+        if '店名' in key:
             return f"店名は「{value}」です。"
-        elif key in ['ADDRESS']:
+        elif '住所' in key:
             return f"住所は「{value}」です。"
-        elif key in ['PHONE']:
+        elif '電話' in key:
             return f"お電話は「{value}」までお願いいたします。"
-        elif key in ['ACCESS_STATION']:
-            return f"最寄りは「{value}」です。"
-        elif key in ['BUSINESS_HOURS_WEEKDAY', 'BUSINESS_HOURS_WEEKEND']:
+        elif 'アクセス' in key:
+            return f"アクセスは「{value}」です。"
+        elif '営業時間' in key:
             return f"営業時間は「{value}」です。"
-        elif key in ['HOLIDAY']:
+        elif '定休日' in key:
             return f"定休日は「{value}」です。"
-        elif key in ['PARKING']:
+        elif '駐車場' in key:
             return f"駐車場は「{value}」です。"
-        elif key in ['PAYMENTS']:
+        elif '支払い' in key:
             return f"支払い方法は「{value}」です。"
-        elif key in ['CANCEL_POLICY']:
+        elif 'キャンセル' in key:
             return f"キャンセル規定は「{value}」です。"
-        elif key in ['ALLERGY_CARE', 'PREGNANCY_CARE']:
+        elif 'アレルギー' in key or '妊娠' in key:
             return f"安全のため、{value}。詳細はスタッフにお繋ぎします。"
+        elif 'SNS' in key or 'sns' in key.lower():
+            return f"SNSアカウントは「{value}」です。"
         else:
             # Generic response for other keys
             return f"{value}です。"
     
     def _get_category(self, key: str) -> str:
         """Get category for KB key"""
-        category_map = {
-            'SALON_NAME': '基本情報',
-            'ADDRESS': '基本情報', 
-            'PHONE': '基本情報',
-            'ACCESS_STATION': 'アクセス',
-            'BUSINESS_HOURS_WEEKDAY': '営業時間',
-            'BUSINESS_HOURS_WEEKEND': '営業時間',
-            'HOLIDAY': '営業時間',
-            'PARKING': 'アクセス',
-            'PAYMENTS': '支払い',
-            'CANCEL_POLICY': '予約',
-            'ALLERGY_CARE': '安全',
-            'PREGNANCY_CARE': '安全'
-        }
-        return category_map.get(key, 'その他')
+        if '店名' in key or '住所' in key or '電話' in key:
+            return '基本情報'
+        elif 'アクセス' in key or '駐車場' in key:
+            return 'アクセス'
+        elif '営業時間' in key or '定休日' in key:
+            return '営業時間'
+        elif '支払い' in key:
+            return '支払い'
+        elif '予約' in key or 'キャンセル' in key:
+            return '予約'
+        elif 'アレルギー' in key or '妊娠' in key:
+            return '安全'
+        elif 'SNS' in key or 'sns' in key.lower():
+            return 'SNS'
+        else:
+            return 'その他'
     
     def _is_dangerous_query(self, query: str) -> bool:
         """Check if query is in dangerous areas that need human guidance"""
@@ -223,4 +213,4 @@ class RAGFAQ:
         Get KB facts only - for use by ChatGPT
         Returns None if not found in KB
         """
-        return self.search(user_message)
+        return self.search(user_message, threshold=0.3)

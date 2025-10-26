@@ -97,47 +97,6 @@ async def reminder_status():
     
     return status
 
-@app.post("/api/run-reminders")
-async def run_reminders_endpoint():
-    """Endpoint to run reminders (can be called by cron job)"""
-    try:
-        from api.reminder_system import reminder_system
-        import pytz
-        from datetime import datetime
-        
-        # Check if it's the right time (Tokyo timezone)
-        tokyo_tz = pytz.timezone('Asia/Tokyo')
-        current_tokyo_time = datetime.now(tokyo_tz)
-        current_hour = current_tokyo_time.hour
-        current_minute = current_tokyo_time.minute
-        
-        # Only run if it's around 9:00 AM Tokyo time (allow 1 minute tolerance)
-        if current_hour == 9 and current_minute <= 1:
-            print(f"Running reminders via cron endpoint at Tokyo time: {current_tokyo_time.strftime('%H:%M')}")
-            
-            # Run the reminder system
-            result = reminder_system.run_daily_reminders()
-            
-            return {
-                "success": True,
-                "message": f"Reminders processed: {result['success_count']}/{result['total_count']}",
-                "tokyo_time": current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S'),
-                "result": result
-            }
-        else:
-            return {
-                "success": False,
-                "message": f"Not the right time. Current Tokyo time: {current_tokyo_time.strftime('%H:%M')}",
-                "tokyo_time": current_tokyo_time.strftime('%Y-%m-%d %H:%M:%S'),
-                "note": "Reminders only run at 9:00 AM Tokyo time"
-            }
-            
-    except Exception as e:
-        print(f"Error running reminders via cron endpoint: {e}")
-        return {
-            "success": False,
-            "message": f"Error: {str(e)}"
-        }
 
 @app.post("/api/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):

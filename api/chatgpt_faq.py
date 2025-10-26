@@ -4,10 +4,12 @@ ChatGPT-powered FAQ system for natural language responses using KB facts
 import os
 from openai import OpenAI
 from typing import Optional
+from dotenv import load_dotenv
 
 class ChatGPTFAQ:
     def __init__(self):
         # Initialize client only if API key is available
+        load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             self.client = OpenAI(api_key=api_key)
@@ -16,39 +18,27 @@ class ChatGPTFAQ:
             self.client = None
             self.api_available = False
             print("Warning: OPENAI_API_KEY not set. ChatGPT features will use fallback responses.")
-        self.system_prompt = """あなたは美容室「SalonAI 表参道店」の親切で知識豊富なスタッフです。
+        
+        self.system_prompt = """あなたは美容室「SalonAI 表参道店」のスタッフです。
 
 【重要なルール】
-1. 提供されたKB事実を必ず使用して回答してください
-2. KB事実がある場合は、それを基に具体的で有用な回答をしてください
-3. 推測や憶測は禁止ですが、KB事実は積極的に活用してください
-4. 医療・薬剤に関する質問は人手誘導してください
-5. 数値の推測は禁止です
-6. 複数のKB事実がある場合は、関連する情報を組み合わせて包括的な回答をしてください
+- 提供されたKB情報のみを使用して回答してください
+- 推測や憶測は禁止です
+- 医療・薬剤に関する質問は「スタッフにお繋ぎします」と回答してください
+- 不明な点は「分かりません。スタッフにお繋ぎします。」と回答してください
 
 【回答スタイル】
 - 丁寧で親しみやすい口調
-- KB事実を自然な日本語で説明
-- KB事実がある場合は具体的な情報を提供
-- 関連する追加情報があれば積極的に提供
-- 不明な点は素直に「分かりません」と伝える
+- 簡潔で分かりやすい回答
+- KB情報をそのまま使用する
+- 追加の推測はしない
 
-【利用可能な情報カテゴリ】
-- 基本情報（店名、住所、電話、アクセス）
-- 営業時間・定休日・混雑情報
-- 予約システム・変更・キャンセル規定
-- 支払い方法・領収書・価格表示
-- スタイリスト情報・指名料
-- クーポン・特典・ポイントシステム
-- 安全・ポリシー（アレルギー、妊娠中対応）
-- アクセス詳細・バリアフリー・子連れ対応
-- 仕上がり保証・来店間隔・持ち込み薬剤
-
-【回答例】
-- 支払い方法の質問 → 支払い方法 + 領収書発行 + 価格表示の情報を組み合わせ
-- アクセスの質問 → 最寄り駅 + 詳細な道順 + 駐車場情報を組み合わせ
-- 営業時間の質問 → 平日・土日祝 + 定休日 + 混雑目安を組み合わせ
-"""
+【禁止事項】
+- KB情報以外の情報提供
+- 推測や憶測
+- 医療アドバイス
+- 競合他社との比較
+- 価格の推測"""
     
     def get_response(self, user_message: str, kb_facts: Optional[dict] = None) -> str:
         """
@@ -59,12 +49,9 @@ class ChatGPTFAQ:
             if self._is_dangerous_query(user_message):
                 return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
             
-            # Check if we have a processed answer from RAG FAQ (template-based response)
-            
-            
             # If API is not available, use fallback immediately
             if not self.api_available:
-                return self._generate_fallback_response()
+                return self._generate_fallback_response(kb_facts)
             
             # Build context from KB facts
             context = ""
@@ -73,28 +60,38 @@ class ChatGPTFAQ:
                 facts_dict = kb_facts.get('kb_facts', kb_facts) if isinstance(kb_facts, dict) else {}
                 
                 if facts_dict:
-                    context = f"\n\n利用可能な事実情報：\n"
+                    context = f"\n\n利用可能なKB情報：\n"
                     for key, value in facts_dict.items():
                         context += f"- {key}: {value}\n"
-                    context += "\n上記の事実情報を必ず使用して回答してください。"
+                    context += "\n上記のKB情報のみを使用して回答してください。"
             
-            response = self.clinet.responses.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4-turbo",
-                instructions = "You are a helpful assistant that can answer questions about the salon.",
-                input=self.system_prompt + context + "\n\n" + user_message
+                messages=[
+                    {"role": "system", "content": self.system_prompt + context},
+                    {"role": "user", "content": user_message}
+                ],
+                max_tokens=500,
+                temperature=0.7
             )
             
-            return response.output_text.strip()
+            return response.choices[0].message.content.strip()
             
         except Exception as e:
             print(f"ChatGPT API error: {e}")
             # Fallback: if we have KB facts, provide a simple response
-            return self._generate_fallback_response()
+            return self._generate_fallback_response(kb_facts)
     
-    def _generate_fallback_response(self) -> str:
+    def _generate_fallback_response(self, kb_facts: Optional[dict] = None) -> str:
         """Generate a fallback response using KB facts when ChatGPT API is not available"""
+        if kb_facts:
+            facts_dict = kb_facts.get('kb_facts', kb_facts) if isinstance(kb_facts, dict) else {}
+            if facts_dict:
+                # Return the first available fact as a simple response
+                for key, value in facts_dict.items():
+                    return f"{value}です。"
         
-        return "申し訳ございませんが、現在システムの調子が悪いようです。しばらくしてから再度お試しください。"
+        return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
     
     def _is_dangerous_query(self, message: str) -> bool:
         """Check if query is in dangerous areas that need human guidance"""

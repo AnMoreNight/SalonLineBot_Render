@@ -14,17 +14,3 @@ services:
         sync: false
       - key: GOOGLE_CREDENTIALS
         sync: false
-  - type: cron
-    name: salon-reminder-cron
-    schedule: "0 0 * * *"  # 00:00 UTC = 09:00 JST
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -c "import os, requests; print('URL:', os.getenv('WEB_BASE_URL') + '/api/run-reminders'); r = requests.post(os.getenv('WEB_BASE_URL') + '/api/run-reminders'); print('Status:', r.status_code); print('Response:', r.text)"
-    envVars:
-      - key: WEB_BASE_URL
-        sync: false
-      - key: LINE_CHANNEL_ACCESS_TOKEN
-        sync: false
-      - key: GOOGLE_CREDENTIALS
-        sync: false
