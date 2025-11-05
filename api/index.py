@@ -217,7 +217,7 @@ def handle_message(event: MessageEvent):
                             print(f"KB hit for user {user_id}: {message_text} -> {kb_category}")
                         else:
                             # Step 3: No KB facts found - return standard "分かりません" response
-                            reply = "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
+                            reply = "申し訳ございませんが、その質問については分かりません。直接お電話にてお問い合わせください。"
                             action_type = "unknown"
                             
                             # Log KB miss for future enhancement

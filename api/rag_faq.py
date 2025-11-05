@@ -86,17 +86,33 @@ class RAGFAQ:
         for key, value in self.kb_data.items():
             # Create contextual text for better semantic matching
             if '住所' in key:
-                text = f"住所 場所 所在地 {key} {value}"
-            elif '営業時間' in key:
-                text = f"営業時間 時間 開店 閉店 {key} {value}"
+                text = f"住所 場所 所在地 どこ 位置 アドレス どこに どの辺り {key} {value}"
+            elif '営業時間平日' in key:
+                text = f"営業時間 時間 開店 閉店 平日 何時 いつ {key} {value}"
+            elif '営業時間土日祝' in key or '営業時間土日' in key:
+                text = f"営業時間 時間 開店 閉店 土日 週末 祝日 土曜 日曜 休日 何時 いつ {key} {value}"
             elif '駐車場' in key:
-                text = f"駐車場 パーキング 車 {key} {value}"
+                text = f"駐車場 パーキング 車 駐車 車で 駐輪 {key} {value}"
             elif '支払い' in key:
-                text = f"支払い 支払 決済 現金 クレジット {key} {value}"
+                text = f"支払い 支払 決済 現金 クレジット お支払い 支払方法 {key} {value}"
+            elif '変更' in key and '予約' not in key:
+                text = f"変更 予約変更 時間変更 日付変更 変更する 変更したい 予約の変更 {key} {value}"
             elif '予約' in key:
-                text = f"予約 予約方法 予約する {key} {value}"
+                text = f"予約 予約方法 予約する 予約したい 予約できますか {key} {value}"
             elif 'キャンセル' in key:
-                text = f"キャンセル 取消 取り消し {key} {value}"
+                text = f"キャンセル 取消 取り消し キャンセルしたい 予約キャンセル {key} {value}"
+            elif '指名料' in key or ('指名' in key and '料金' in key):
+                text = f"指名料 指名 指名料金 指名する 指名の料金 料金 {key} {value}"
+            elif '追加料金' in key or ('追加' in key and '料金' in key):
+                text = f"追加料金 追加 料金 オプション 追加費用 プラス 加算 {key} {value}"
+            elif '紹介割' in key or ('紹介' in key and '割' in key):
+                text = f"紹介割 紹介 紹介割引 紹介する 紹介者 割引 特典 {key} {value}"
+            elif '仕上がり保証' in key or ('仕上がり' in key and '保証' in key):
+                text = f"仕上がり保証 保証 お直し 仕上がり 保証期間 無償 {key} {value}"
+            elif 'カット' in key or 'カラー' in key or 'パーマ' in key or 'トリートメント' in key:
+                text = f"メニュー 料金 価格 値段 サービス {key} {value}"
+            elif 'クーポン' in key or '特典' in key or '割引' in key:
+                text = f"割引 特典 クーポン キャンペーン お得 {key} {value}"
             elif 'SNS' in key or 'sns' in key.lower():
                 text = f"SNS ソーシャル 公式 アカウント LINE Instagram {key} {value}"
             else:
@@ -116,7 +132,7 @@ class RAGFAQ:
         faiss.normalize_L2(embeddings)
         self.index.add(embeddings.astype('float32'))
     
-    def search(self, query: str, threshold: float = 0.5) -> Optional[Dict[str, Any]]:
+    def search(self, query: str, threshold: float = 0.3) -> Optional[Dict[str, Any]]:
         """
         Search using FAISS semantic similarity
         Returns None if no good match found
@@ -128,13 +144,72 @@ class RAGFAQ:
         query_embedding = self.model.encode([query])
         faiss.normalize_L2(query_embedding)
         
-        # Search for most similar
-        scores, indices = self.index.search(query_embedding.astype('float32'), 1)
+        # Search for top 3 most similar results
+        k = min(3, len(self.kb_keys))
+        scores, indices = self.index.search(query_embedding.astype('float32'), k)
         
         if len(indices[0]) > 0 and scores[0][0] >= threshold:
             best_idx = indices[0][0]
             best_key = self.kb_keys[best_idx]
             best_score = float(scores[0][0])
+            
+            # Check if query contains specific keywords that should match certain KB keys
+            # This helps with exact keyword matching for better accuracy
+            if '住所' in query or 'どこ' in query or '場所' in query:
+                for idx, key in enumerate(self.kb_keys):
+                    if '住所' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9  # High confidence for direct keyword match
+                        break
+            
+            if ('土日' in query or '週末' in query or '祝日' in query or '土曜' in query or '日曜' in query) and '営業時間' in query:
+                for idx, key in enumerate(self.kb_keys):
+                    if '営業時間土日祝' in key or '営業時間土日' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+            
+            if ('変更' in query or '予約変更' in query) and 'キャンセル' not in query:
+                for idx, key in enumerate(self.kb_keys):
+                    if '変更' in key and 'キャンセル' not in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+            
+            if '指名料' in query or ('指名' in query and '料金' in query):
+                for idx, key in enumerate(self.kb_keys):
+                    if '指名料' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+            
+            if '追加料金' in query or ('追加' in query and '料金' in query):
+                for idx, key in enumerate(self.kb_keys):
+                    if '追加料金' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+            
+            if '紹介割' in query or ('紹介' in query and '割' in query):
+                for idx, key in enumerate(self.kb_keys):
+                    if '紹介割' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+            
+            if '仕上がり保証' in query or ('仕上がり' in query and '保証' in query) or 'お直し' in query:
+                for idx, key in enumerate(self.kb_keys):
+                    if '仕上がり保証' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
             
             kb_value = self.kb_data[best_key]
             response = self._create_response(best_key, kb_value, query)
@@ -161,6 +236,10 @@ class RAGFAQ:
             return f"お電話は「{value}」までお願いいたします。"
         elif 'アクセス' in key:
             return f"アクセスは「{value}」です。"
+        elif '営業時間平日' in key:
+            return f"平日の営業時間は「{value}」です。"
+        elif '営業時間土日祝' in key or '営業時間土日' in key:
+            return f"土日祝の営業時間は「{value}」です。"
         elif '営業時間' in key:
             return f"営業時間は「{value}」です。"
         elif '定休日' in key:
@@ -169,8 +248,22 @@ class RAGFAQ:
             return f"駐車場は「{value}」です。"
         elif '支払い' in key:
             return f"支払い方法は「{value}」です。"
+        elif '変更' in key:
+            return f"予約変更について：{value}"
         elif 'キャンセル' in key:
             return f"キャンセル規定は「{value}」です。"
+        elif '指名料' in key:
+            return f"指名料は「{value}」です。"
+        elif '追加料金' in key:
+            return f"追加料金について：{value}"
+        elif '紹介割' in key:
+            return f"紹介割引について：{value}"
+        elif '仕上がり保証' in key:
+            return f"仕上がり保証について：{value}"
+        elif 'カット' in key or 'カラー' in key or 'パーマ' in key or 'トリートメント' in key:
+            return f"{key}は「{value}」です。"
+        elif 'クーポン' in key or '特典' in key or '割引' in key:
+            return f"{key}について：{value}"
         elif 'アレルギー' in key or '妊娠' in key:
             return f"安全のため、{value}。詳細はスタッフにお繋ぎします。"
         elif 'SNS' in key or 'sns' in key.lower():
@@ -189,8 +282,18 @@ class RAGFAQ:
             return '営業時間'
         elif '支払い' in key:
             return '支払い'
+        elif '変更' in key:
+            return '予約変更'
         elif '予約' in key or 'キャンセル' in key:
             return '予約'
+        elif '指名料' in key or '追加料金' in key:
+            return '料金'
+        elif '紹介割' in key or 'クーポン' in key or '特典' in key:
+            return '割引・特典'
+        elif '仕上がり保証' in key:
+            return '保証'
+        elif 'カット' in key or 'カラー' in key or 'パーマ' in key or 'トリートメント' in key:
+            return 'メニュー・料金'
         elif 'アレルギー' in key or '妊娠' in key:
             return '安全'
         elif 'SNS' in key or 'sns' in key.lower():
