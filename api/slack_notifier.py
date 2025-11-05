@@ -196,16 +196,9 @@ class SlackNotifier:
             
         else:
             # No reminders sent
-            message = f"❌ **予約リマインダー送信失敗**\n\n"
-            message += f"📊 **送信結果:**\n"
-            message += f"• 送信成功: 0件\n"
-            message += f"• 送信失敗: {total_count}件\n"
-            message += f"• 合計: {total_count}件\n\n"
-            message += f"すべてのリマインダー送信に失敗しました。\n"
-            message += f"システム管理者にご連絡ください。"
-            
-            color = "danger"
-            title = "❌ リマインダー送信失敗"
+            message = f"リマインダー送信はありません"            
+            color = "good"
+            title = "📅 リマインダー送信"
         
         return self.send_notification(
             message=message,
@@ -223,8 +216,13 @@ class SlackNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            service_info = services_data.get("services", {}).get(service_name, {})
-            return service_info.get("duration", 0)
+            # Search for service by name (not by ID)
+            services = services_data.get("services", {})
+            for service_id, service_info in services.items():
+                if service_info.get("name") == service_name:
+                    return service_info.get("duration", 0)
+            
+            return 0
         except Exception:
             return 0
     
@@ -238,8 +236,13 @@ class SlackNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            service_info = services_data.get("services", {}).get(service_name, {})
-            return service_info.get("price", 0)
+            # Search for service by name (not by ID)
+            services = services_data.get("services", {})
+            for service_id, service_info in services.items():
+                if service_info.get("name") == service_name:
+                    return service_info.get("price", 0)
+            
+            return 0
         except Exception:
             return 0
     

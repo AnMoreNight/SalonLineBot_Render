@@ -469,6 +469,77 @@ class ReservationFlow:
 
 ❌ 予約をキャンセルする場合は「キャンセル」と送信"""
         
+        # Check if service duration can fit in any available slot
+        service_name = self.user_states[user_id]["data"].get("service")
+        if service_name:
+            # Get service duration
+            service_info = {}
+            for service_id, service_data in self.services.items():
+                if service_data.get("name") == service_name:
+                    service_info = service_data
+                    break
+            
+            service_duration = service_info.get("duration", 60)  # Default to 60 minutes
+            
+            # Check if any slot can accommodate the service duration
+            can_accommodate = False
+            max_slot_duration = 0
+            
+            for period in available_periods:
+                slot_duration = self._calculate_time_duration_minutes(
+                    period["time"], 
+                    period["end_time"]
+                )
+                max_slot_duration = max(max_slot_duration, slot_duration)
+                
+                if slot_duration >= service_duration:
+                    can_accommodate = True
+                    break
+            
+            if not can_accommodate:
+                # Service duration is greater than all available slots
+                self.user_states[user_id]["step"] = "date_selection"
+                
+                # Convert duration to readable format
+                service_hours = service_duration // 60
+                service_minutes = service_duration % 60
+                if service_hours > 0 and service_minutes > 0:
+                    duration_str = f"{service_hours}時間{service_minutes}分"
+                elif service_hours > 0:
+                    duration_str = f"{service_hours}時間"
+                else:
+                    duration_str = f"{service_minutes}分"
+                
+                max_hours = max_slot_duration // 60
+                max_minutes = max_slot_duration % 60
+                if max_hours > 0 and max_minutes > 0:
+                    max_duration_str = f"{max_hours}時間{max_minutes}分"
+                elif max_hours > 0:
+                    max_duration_str = f"{max_hours}時間"
+                else:
+                    max_duration_str = f"{max_minutes}分"
+                
+                return f"""申し訳ございませんが、{selected_date}の空いている時間帯では、{service_name}（{duration_str}）の予約ができません。
+
+📅 選択した日付：{selected_date}
+💇 選択したサービス：{service_name}（{duration_str}）
+⏱️ この日の最大空き時間：{max_duration_str}
+
+この日付では{service_name}の予約時間が確保できません。
+
+他の日付をお選びください。
+
+📅 **Googleカレンダーで空き状況を確認してください：**
+🔗 {self.google_calendar.get_calendar_url()}
+
+💡 **手順：**
+1️⃣ 上記リンクをクリックしてGoogleカレンダーを開く
+2️⃣ 空いている日付を確認
+3️⃣ 希望の日付を「YYYY-MM-DD」形式で送信
+📝 例：`2025-01-15`
+
+❌ 予約をキャンセルする場合は「キャンセル」とお送りください"""
+        
         # Format available periods for display
         period_strings = []
         for period in available_periods:
@@ -833,6 +904,7 @@ class ReservationFlow:
 📅 日時：{reservation_data['date']} {time_display}
 💇 サービス：{reservation_data['service']}
 👨‍💼 担当者：{reservation_data['staff']}
+💰 料金：{service_info.get('price', 0):,}円
 
 当日はお時間までにお越しください。
 ご予約ありがとうございました！"""
@@ -1042,6 +1114,8 @@ class ReservationFlow:
         """Show user's reservations for cancellation selection"""
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
+            import pytz
+            
             sheets_logger = GoogleSheetsLogger()
             client_name = self._get_line_display_name(user_id)
             
@@ -1052,12 +1126,46 @@ class ReservationFlow:
             if not reservations:
                 return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
             
-            # Store reservations for selection
-            self.user_states[user_id]["user_reservations"] = reservations
+            # Filter out past reservations by comparing with current time
+            tokyo_tz = pytz.timezone('Asia/Tokyo')
+            current_time = datetime.now(tokyo_tz)
+            future_reservations = []
             
-            # Create reservation list
+            for res in reservations:
+                try:
+                    # Parse reservation date and start time
+                    reservation_date = res.get('date', '')
+                    reservation_start_time = res.get('start_time', '')
+                    
+                    if not reservation_date or not reservation_start_time:
+                        # Skip reservations without date or time
+                        continue
+                    
+                    # Parse datetime in Tokyo timezone
+                    reservation_datetime_naive = datetime.strptime(
+                        f"{reservation_date} {reservation_start_time}", 
+                        "%Y-%m-%d %H:%M"
+                    )
+                    reservation_datetime = tokyo_tz.localize(reservation_datetime_naive)
+                    
+                    # Only include future reservations
+                    if reservation_datetime > current_time:
+                        future_reservations.append(res)
+                        
+                except (ValueError, TypeError) as e:
+                    # Skip reservations with invalid date/time format
+                    logging.warning(f"Skipping reservation with invalid date/time: {res.get('reservation_id', 'Unknown')} - {e}")
+                    continue
+            
+            if not future_reservations:
+                return "申し訳ございませんが、今後予定されている予約が見つかりませんでした。\n過去の予約はキャンセルできません。"
+            
+            # Store only future reservations for selection
+            self.user_states[user_id]["user_reservations"] = future_reservations
+            
+            # Create reservation list (show max 5 future reservations)
             reservation_list = []
-            for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
+            for i, res in enumerate(future_reservations[:5], 1):
                 reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
             
             return f"""ご予約のキャンセルですね。
@@ -1066,12 +1174,12 @@ class ReservationFlow:
 
 {chr(10).join(reservation_list)}
 
-キャンセルしたい予約の番号（1-{len(reservations[:5])}）を入力してください。
+キャンセルしたい予約の番号を入力してください。
 
 または、予約IDを直接入力することもできます。
 例）RES-20250115-0001
 
-❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+❌ 取り消しをやめる場合は「キャンセル」とお送りください"""
             
         except Exception as e:
             logging.error(f"Failed to show user reservations for cancellation: {e}")
@@ -1117,7 +1225,7 @@ class ReservationFlow:
 この予約をキャンセルしますか？
 「はい」または「確定」とお送りください。
 
-❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+❌ 取り消しをやめる場合は「キャンセル」とお送りください。"""
                 else:
                     return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
             
@@ -1148,7 +1256,7 @@ class ReservationFlow:
 この予約をキャンセルしますか？
 「はい」または「確定」とお送りください。
 
-❌ キャンセルをやめる場合は「キャンセル」とお送りください。"""
+❌ 取り消しをやめる場合は「キャンセル」とお送りください。"""
                 else:
                     return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
             else:
@@ -1493,6 +1601,8 @@ class ReservationFlow:
         """Show user's reservations for modification selection"""
         try:
             from api.google_sheets_logger import GoogleSheetsLogger
+            import pytz
+            
             sheets_logger = GoogleSheetsLogger()
             client_name = self._get_line_display_name(user_id)
             
@@ -1502,12 +1612,46 @@ class ReservationFlow:
             if not reservations:
                 return "申し訳ございませんが、あなたの予約が見つかりませんでした。\nスタッフまでお問い合わせください。"
             
-            # Store reservations for selection
-            self.user_states[user_id]["user_reservations"] = reservations
+            # Filter out past reservations by comparing with current time
+            tokyo_tz = pytz.timezone('Asia/Tokyo')
+            current_time = datetime.now(tokyo_tz)
+            future_reservations = []
             
-            # Create reservation list
+            for res in reservations:
+                try:
+                    # Parse reservation date and start time
+                    reservation_date = res.get('date', '')
+                    reservation_start_time = res.get('start_time', '')
+                    
+                    if not reservation_date or not reservation_start_time:
+                        # Skip reservations without date or time
+                        continue
+                    
+                    # Parse datetime in Tokyo timezone
+                    reservation_datetime_naive = datetime.strptime(
+                        f"{reservation_date} {reservation_start_time}", 
+                        "%Y-%m-%d %H:%M"
+                    )
+                    reservation_datetime = tokyo_tz.localize(reservation_datetime_naive)
+                    
+                    # Only include future reservations
+                    if reservation_datetime > current_time:
+                        future_reservations.append(res)
+                        
+                except (ValueError, TypeError) as e:
+                    # Skip reservations with invalid date/time format
+                    logging.warning(f"Skipping reservation with invalid date/time: {res.get('reservation_id', 'Unknown')} - {e}")
+                    continue
+            
+            if not future_reservations:
+                return "申し訳ございませんが、今後予定されている予約が見つかりませんでした。\n過去の予約は変更できません。"
+            
+            # Store only future reservations for selection
+            self.user_states[user_id]["user_reservations"] = future_reservations
+            
+            # Create reservation list (show max 5 future reservations)
             reservation_list = []
-            for i, res in enumerate(reservations[:5], 1):  # Show max 5 reservations
+            for i, res in enumerate(future_reservations[:5], 1):
                 reservation_list.append(f"{i}️⃣ {res['date']} {res['start_time']}~{res['end_time']} - {res['service']} ({res['reservation_id']})")
             
             return f"""ご予約の変更ですね。
@@ -1516,12 +1660,12 @@ class ReservationFlow:
 
 {chr(10).join(reservation_list)}
 
-変更したい予約の番号（1-{len(reservations[:5])}）を入力してください。
+変更したい予約の番号を入力してください。
 
 または、予約IDを直接入力することもできます。
 例）RES-20250115-0001
 
-❌ 変更をやめる場合は「キャンセル」とお送りください。"""
+変更をやめる場合は「キャンセル」とお送りください。"""
             
         except Exception as e:
             logging.error(f"Failed to show user reservations for modification: {e}")
@@ -1565,9 +1709,11 @@ class ReservationFlow:
 🔗 {calendar_url}
 
 何を変更しますか？
-{self._get_modification_menu()}"""
+{self._get_modification_menu()}
+
+変更をやめる場合は「キャンセル」とお送りください。"""
                 else:
-                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。"
+                    return "申し訳ございませんが、その予約IDが見つからないか、あなたの予約ではありません。\n正しい予約IDまたは番号を入力してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
             
             # Check if message is a number (reservation selection)
             elif message.isdigit():
@@ -1594,15 +1740,17 @@ class ReservationFlow:
 🔗 {calendar_url}
 
 何を変更しますか？
-{self._get_modification_menu()}"""
+{self._get_modification_menu()}
+
+変更をやめる場合は「キャンセル」とお送りください。"""
                 else:
-                    return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。"
+                    return f"申し訳ございませんが、その番号は選択できません。\n1から{len(reservations)}の番号を入力してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
             else:
-                return f"申し訳ございませんが、正しい形式で入力してください。\n番号（1-{len(reservations)}）または予約ID（RES-YYYYMMDD-XXXX）を入力してください。"
+                return f"申し訳ございませんが、正しい形式で入力してください。\n番号（1-{len(reservations)}）または予約ID（RES-YYYYMMDD-XXXX）を入力してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
                 
         except Exception as e:
             logging.error(f"Reservation selection for modification failed: {e}")
-            return "申し訳ございません。予約選択中にエラーが発生しました。スタッフまでお問い合わせください。"
+            return "申し訳ございません。予約選択中にエラーが発生しました。スタッフまでお問い合わせください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
     
     def _handle_field_selection(self, user_id: str, message: str) -> str:
         """Handle field selection for modification"""
@@ -1633,7 +1781,7 @@ class ReservationFlow:
                 return self._handle_re_reservation(user_id, message)
         
         # Only numeric selection is supported
-        return f"申し訳ございませんが、正しい番号を入力してください。\n\n{self._get_modification_menu()}"
+        return f"申し訳ございませんが、正しい番号を入力してください。\n\n{self._get_modification_menu()}\n\n変更をやめる場合は「キャンセル」とお送りください。"
     
     def _handle_re_reservation(self, user_id: str, message: str) -> str:
         """Handle re-reservation option - cancel current reservation and start new reservation"""
@@ -1664,17 +1812,19 @@ class ReservationFlow:
 この方法で進めてもよろしいですか？
 
 「はい」または「確定」と入力してください。
-キャンセルする場合は「キャンセル」と入力してください。"""
+キャンセルする場合は「キャンセル」と入力してください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_re_reservation_confirmation(self, user_id: str, message: str) -> str:
         """Handle re-reservation confirmation - cancel current reservation and start new reservation flow"""
         state = self.user_states.get(user_id)
         if not state:
-            return "申し訳ございません。セッションが切れました。最初からやり直してください。"
+            return "申し訳ございません。セッションが切れました。最初からやり直してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         reservation = state.get("reservation_data")
         if not reservation:
-            return "申し訳ございません。予約データが見つかりません。最初からやり直してください。"
+            return "申し訳ございません。予約データが見つかりません。最初からやり直してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         print(f"Re-reservation confirmation - User: {user_id}, Message: '{message}'")
         
@@ -1756,7 +1906,7 @@ class ReservationFlow:
                 
             except Exception as e:
                 print(f"Error in re-reservation confirmation: {e}")
-                return "申し訳ございません。処理中にエラーが発生しました。\nスタッフまでお問い合わせください。"
+                return "申し訳ございません。処理中にエラーが発生しました。\nスタッフまでお問い合わせください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         # Check for cancellation
         elif message_normalized in ["キャンセル", "cancel", "いいえ", "no"]:
@@ -1794,7 +1944,9 @@ class ReservationFlow:
 1️⃣ 同じ日付で時間だけ変更
 2️⃣ 日付も変更したい
 
-番号を選択してください。"""
+番号を選択してください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_time_date_selection(self, user_id: str, message: str) -> str:
         """Handle date selection for time modification"""
@@ -1820,12 +1972,16 @@ class ReservationFlow:
 📅 日付の形式：YYYY-MM-DD
 例）2025-10-20
 
-※ 土曜日と日曜日は定休日です。"""
+※ 土曜日と日曜日は定休日です。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
         else:
             return """番号を選択してください：
 
 1️⃣ 同じ日付で時間だけ変更
-2️⃣ 日付も変更したい"""
+2️⃣ 日付も変更したい
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_time_input_date(self, user_id: str, message: str) -> str:
         """Handle new date input for time modification"""
@@ -1835,7 +1991,7 @@ class ReservationFlow:
         
         date_match = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', message.strip())
         if not date_match:
-            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20"
+            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         try:
             new_date = message.strip()
@@ -1843,17 +1999,17 @@ class ReservationFlow:
             
             # Check if it's not Sunday (weekday 6)
             if date_obj.weekday() == 6:
-                return "申し訳ございませんが、日曜日は定休日です。\n別の日付を選択してください。"
+                return "申し訳ございませんが、日曜日は定休日です。\n別の日付を選択してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
             
             # Check if date is in the future
             if date_obj.date() < datetime.now().date():
-                return "過去の日付は選択できません。\n本日以降の日付を入力してください。"
+                return "過去の日付は選択できません。\n本日以降の日付を入力してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
             
             # Date is valid, show available times
             return self._show_available_times_for_date(user_id, new_date)
             
         except ValueError:
-            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20"
+            return "日付の形式が正しくありません。\nYYYY-MM-DD の形式で入力してください。\n例）2025-10-20\n\n変更をやめる場合は「キャンセル」とお送りください。"
     
     def _show_available_times_for_date(self, user_id: str, date: str) -> str:
         """Show available times for a specific date - includes current reservation's time"""
@@ -1875,7 +2031,7 @@ class ReservationFlow:
         )
         
         if not available_slots:
-            return f"申し訳ございませんが、{date}は空いている時間がありません。\n別の日付を選択してください。"
+            return f"申し訳ございませんが、{date}は空いている時間がありません。\n別の日付を選択してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         # Store the selected date and available slots
         self.user_states[user_id]["selected_date"] = date
@@ -1910,7 +2066,9 @@ class ReservationFlow:
 新しい開始時間を入力してください。
 例）13:00 または 13:30
 
-💡 現在の予約時間も選択可能です（変更なしの確認）"""
+💡 現在の予約時間も選択可能です（変更なしの確認）
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_time_selection_for_modification(self, user_id: str, message: str) -> str:
         """Handle time selection for modification"""
@@ -1930,7 +2088,9 @@ class ReservationFlow:
 ・13時
 ・13時30分
 
-上記の空き時間から開始時間をお選びください。"""
+上記の空き時間から開始時間をお選びください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
         
         # Calculate end time based on service duration
         service_name = reservation.get("service", "")
@@ -1962,7 +2122,9 @@ class ReservationFlow:
 この内容で変更を確定しますか？
 
 「はい」または「確定」で変更を確定
-「キャンセル」で変更を中止"""
+「キャンセル」で変更を中止
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_service_modification(self, user_id: str, message: str) -> str:
         """Handle service modification with duration validation"""
@@ -1986,7 +2148,9 @@ class ReservationFlow:
 📋 利用可能なサービス：
 {service_list}
 
-上記からサービス名を入力してください。"""
+上記からサービス名を入力してください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_staff_modification(self, user_id: str, message: str) -> str:
         """Handle staff modification"""
@@ -2014,7 +2178,9 @@ class ReservationFlow:
 📋 利用可能な担当者：
 {staff_list}
 
-上記から担当者名を入力してください。"""
+上記から担当者名を入力してください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _confirm_staff_change(self, user_id: str, new_staff: str) -> str:
         """Confirm staff change and update reservation"""
@@ -2079,7 +2245,7 @@ class ReservationFlow:
                 if staff_name != current_staff:
                     available_staff.append(staff_name)
             available_staff_str = "、".join(available_staff)
-            return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff_str}\n\n上記から選択してください。"
+            return f"申し訳ございませんが、その担当者は選択できません。\n\n利用可能な担当者：\n{available_staff_str}\n\n上記から選択してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
         
         # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "staff"
@@ -2099,7 +2265,9 @@ class ReservationFlow:
 この内容で変更を確定しますか？
 
 「はい」または「確定」で変更を確定
-「キャンセル」で変更を中止"""
+「キャンセル」で変更を中止
+
+変更をやめる場合は「キャンセル」とお送りください。"""
     
     def _handle_service_selection_for_modification(self, user_id: str, message: str) -> str:
         """Handle service selection for modification"""
@@ -2143,7 +2311,101 @@ class ReservationFlow:
                     available_service_names.append(service_name)
             available_services = available_service_names
             available_services_str = "、".join(available_services)
-            return f"申し訳ございませんが、そのサービスは選択できません。\n\n利用可能なサービス：\n{available_services_str}\n\n上記から選択してください。"
+            return f"申し訳ございませんが、そのサービスは選択できません。\n\n利用可能なサービス：\n{available_services_str}\n\n上記から選択してください。\n\n変更をやめる場合は「キャンセル」とお送りください。"
+        
+        # Get new service info to calculate new end time
+        new_service_info = {}
+        for service_id, service_data in self.services.items():
+            if service_data.get("name") == new_service:
+                new_service_info = service_data
+                break
+        
+        if not new_service_info:
+            return "申し訳ございませんが、サービスの情報を取得できませんでした。\n\n変更をやめる場合は「キャンセル」とお送りください。"
+        
+        new_duration = new_service_info.get("duration", 60)
+        
+        # Calculate new end time based on new service duration
+        reservation_date = reservation['date']
+        reservation_start_time = reservation['start_time']
+        
+        try:
+            start_dt = datetime.strptime(reservation_start_time, "%H:%M")
+            new_end_dt = start_dt + timedelta(minutes=new_duration)
+            new_end_time = new_end_dt.strftime("%H:%M")
+        except Exception as e:
+            logging.error(f"Error calculating new end time: {e}")
+            return "申し訳ございませんが、時間の計算中にエラーが発生しました。\n\n変更をやめる場合は「キャンセル」とお送りください。"
+        
+        # Check if new end time overlaps with next reservation for the same staff
+        try:
+            import pytz
+            
+            # Get all events for the date
+            all_events = self.google_calendar.get_events_for_date(reservation_date)
+            
+            # Filter events by staff
+            staff_events = self.google_calendar._filter_events_by_staff(all_events, reservation['staff'])
+            
+            # Parse current reservation datetime
+            current_reservation_start = datetime.strptime(
+                f"{reservation_date} {reservation_start_time}", 
+                "%Y-%m-%d %H:%M"
+            )
+            new_reservation_end = datetime.strptime(
+                f"{reservation_date} {new_end_time}", 
+                "%Y-%m-%d %H:%M"
+            )
+            
+            # Find the next reservation (after current reservation start time)
+            next_reservation = None
+            next_reservation_start = None
+            
+            tz = pytz.timezone('Asia/Tokyo')
+            
+            for event in staff_events:
+                # Skip the current reservation being modified
+                description = event.get('description', '')
+                if reservation.get('reservation_id') and f"予約ID: {reservation['reservation_id']}" in description:
+                    continue
+                
+                event_start_str = event.get('start', {}).get('dateTime', '')
+                if event_start_str:
+                    # Parse event time
+                    event_start = datetime.fromisoformat(event_start_str.replace('Z', '+00:00'))
+                    event_start = event_start.astimezone(tz).replace(tzinfo=None)
+                    
+                    # Check if this event starts after current reservation
+                    if event_start > current_reservation_start:
+                        if next_reservation_start is None or event_start < next_reservation_start:
+                            next_reservation_start = event_start
+                            next_reservation = event
+            
+            # Check if new end time overlaps with next reservation
+            if next_reservation and next_reservation_start:
+                if new_reservation_end > next_reservation_start:
+                    # Get next reservation details for error message
+                    next_event_summary = next_reservation.get('summary', '予約')
+                    next_event_start_str = next_reservation.get('start', {}).get('dateTime', '')
+                    
+                    if next_event_start_str:
+                        next_event_start = datetime.fromisoformat(next_event_start_str.replace('Z', '+00:00'))
+                        next_event_start = next_event_start.astimezone(tz)
+                        next_start_time_str = next_event_start.strftime("%H:%M")
+                        
+                        return f"""申し訳ございませんが、{new_service}（{new_duration}分）に変更すると、次の予約と時間が重複してしまいます。
+
+📅 予約日時：{reservation_date} {reservation_start_time}~{new_end_time}
+👨‍💼 担当者：{reservation['staff']}
+⏱️ 新しい所要時間：{new_duration}分
+🚫 次の予約：{next_start_time_str}開始
+
+別のサービスを選択するか、時間を変更してください。
+
+変更をやめる場合は「キャンセル」とお送りください。"""
+        except Exception as e:
+            logging.error(f"Error checking next reservation overlap: {e}")
+            # Continue with modification if check fails (don't block user)
         
         # Store modification type and pending modification
         self.user_states[user_id]["modification_type"] = "service"
@@ -2157,8 +2419,9 @@ class ReservationFlow:
         return f"""サービス変更の確認
 
 📅 変更内容：
-• 現在のサービス：{reservation['service']} ({reservation['duration']}分)
-• 新しいサービス：{new_service}
+• 現在のサービス：{reservation['service']} ({reservation.get('duration', 'N/A')}分)
+• 新しいサービス：{new_service} ({new_duration}分)
+• 新しい終了時間：{new_end_time}
 
 この内容で変更を確定しますか？
 
@@ -2215,6 +2478,7 @@ class ReservationFlow:
 📅 予約日時：{reservation_date} {reservation_start_time}
 ⏰ 現在時刻：{current_time.strftime('%Y-%m-%d %H:%M')}
 ⏱️ 残り時間：{int(time_diff.total_seconds() / 3600)}時間{int((time_diff.total_seconds() % 3600) / 60)}分
+💰 料金：{reservation['price']:,}円
 
 緊急の場合は直接サロンまでお電話ください。"""
             

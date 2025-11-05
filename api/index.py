@@ -465,8 +465,7 @@ def handle_consent_response(user_id: str, user_name: str, message_text: str, rep
 ❓ よくある質問
 
 何かご質問がございましたら、お気軽にお声かけください。
-
-まずは「予約したい」とお送りください。"""
+"""
 
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)

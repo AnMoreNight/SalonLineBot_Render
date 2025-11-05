@@ -42,7 +42,7 @@ class LineNotifier:
             if title:
                 full_message = f"📢 {title}\n\n{message}"
             else:
-                full_message = f"📢 Salon Booking Notification\n\n{message}"
+                full_message = f"📢 {message}"
             
             # If calendar_url is provided, use template message with button
             if calendar_url:
