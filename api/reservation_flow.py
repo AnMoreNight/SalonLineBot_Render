@@ -1873,17 +1873,20 @@ class ReservationFlow:
                 
                 # Send notification to manager about cancellation
                 try:
+                    cancellation_reservation_data = {
+                        "reservation_id": reservation_id,
+                        "date": reservation['date'],
+                        "start_time": reservation['start_time'],
+                        "end_time": reservation['end_time'],
+                        "service": reservation['service'],
+                        "staff": reservation['staff']
+                    }
                     notification_manager.notify_reservation_cancellation(
-                        reservation_id=reservation_id,
-                        client_name=client_name,
-                        date=reservation['date'],
-                        start_time=reservation['start_time'],
-                        end_time=reservation['end_time'],
-                        service=reservation['service'],
-                        staff=reservation['staff'],
-                        reason="再予約による自動キャンセル"
+                        cancellation_reservation_data,
+                        client_name
                     )
                 except Exception as notify_error:
+                    logging.error(f"Failed to send cancellation notification: {notify_error}")
                     print(f"Warning: Failed to send cancellation notification: {notify_error}")
                 
                 # Send cancellation confirmation message

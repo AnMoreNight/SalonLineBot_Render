@@ -196,7 +196,8 @@ class SlackNotifier:
             
         else:
             # No reminders sent
-            message = f"リマインダー送信はありません"            
+            message = f"リマインダー送信はありません"
+            
             color = "good"
             title = "📅 リマインダー送信"
         
@@ -216,10 +217,18 @@ class SlackNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            # Search for service by name (not by ID)
             services = services_data.get("services", {})
-            for service_id, service_info in services.items():
-                if service_info.get("name") == service_name:
+            if not services:
+                return 0
+
+            # Try direct lookup (service stored as ID)
+            direct = services.get(service_name)
+            if isinstance(direct, dict):
+                return direct.get("duration", 0)
+
+            # Fallback: search by service name field
+            for service_info in services.values():
+                if isinstance(service_info, dict) and service_info.get("name") == service_name:
                     return service_info.get("duration", 0)
             
             return 0
@@ -236,10 +245,18 @@ class SlackNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            # Search for service by name (not by ID)
             services = services_data.get("services", {})
-            for service_id, service_info in services.items():
-                if service_info.get("name") == service_name:
+            if not services:
+                return 0
+
+            # Try direct lookup (service stored as ID)
+            direct = services.get(service_name)
+            if isinstance(direct, dict):
+                return direct.get("price", 0)
+
+            # Fallback: search by service name field
+            for service_info in services.values():
+                if isinstance(service_info, dict) and service_info.get("name") == service_name:
                     return service_info.get("price", 0)
             
             return 0

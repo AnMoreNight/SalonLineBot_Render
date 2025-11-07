@@ -4,6 +4,7 @@ Simplified approach with vector similarity search
 """
 import json
 import os
+import re
 import numpy as np
 import faiss
 from typing import Dict, Any, Optional
@@ -15,6 +16,7 @@ class RAGFAQ:
         self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
         self.index = None
         self.kb_keys = []
+        self.combo_keys = []
         self._build_faiss_index()
     
     def _load_kb_data(self, path: str) -> Dict[str, str]:
@@ -82,6 +84,7 @@ class RAGFAQ:
         # Prepare texts for embedding
         texts = []
         self.kb_keys = []
+        self.combo_keys = []
         
         for key, value in self.kb_data.items():
             # Create contextual text for better semantic matching
@@ -110,7 +113,7 @@ class RAGFAQ:
             elif '仕上がり保証' in key or ('仕上がり' in key and '保証' in key):
                 text = f"仕上がり保証 保証 お直し 仕上がり 保証期間 無償 {key} {value}"
             elif 'カット' in key or 'カラー' in key or 'パーマ' in key or 'トリートメント' in key:
-                text = f"メニュー 料金 価格 値段 サービス {key} {value}"
+                text = f"メニュー 料金 価格 値段 サービス いくら 何円 金額 費用 {key} {value}"
             elif 'クーポン' in key or '特典' in key or '割引' in key:
                 text = f"割引 特典 クーポン キャンペーン お得 {key} {value}"
             elif 'SNS' in key or 'sns' in key.lower():
@@ -120,6 +123,12 @@ class RAGFAQ:
             
             texts.append(text)
             self.kb_keys.append(key)
+
+            # Store combo key metadata for later detection
+            if any(sep in key for sep in ['＋', '+', '＆', '&']):
+                parts = [part.strip() for part in re.split(r'[＋+＆&]', key) if part.strip()]
+                if parts:
+                    self.combo_keys.append({'key': key, 'parts': parts})
         
         # Generate embeddings
         embeddings = self.model.encode(texts)
@@ -148,6 +157,11 @@ class RAGFAQ:
         k = min(3, len(self.kb_keys))
         scores, indices = self.index.search(query_embedding.astype('float32'), k)
         
+        best_idx = None
+        best_key = None
+        best_score = 0.0
+        kb_value = None
+
         if len(indices[0]) > 0 and scores[0][0] >= threshold:
             best_idx = indices[0][0]
             best_key = self.kb_keys[best_idx]
@@ -211,9 +225,83 @@ class RAGFAQ:
                         best_score = 0.9
                         break
             
-            kb_value = self.kb_data[best_key]
-            response = self._create_response(best_key, kb_value, query)
+            if ('カット' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
+                for idx, key in enumerate(self.kb_keys):
+                    if 'カット' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+
+            if ('カラー' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
+                for idx, key in enumerate(self.kb_keys):
+                    if 'ダブルカラー' in key:
+                        continue
+                    if 'カラー' in key and 'カット' not in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
+
+            if '眉カット' in query:
+                for idx, key in enumerate(self.kb_keys):
+                    if '眉カット' in key:
+                        best_idx = idx
+                        best_key = key
+                        best_score = 0.9
+                        break
             
+            # Detect combo keys whose parts all appear in the query even without explicit separators
+            if not kb_value and self.combo_keys:
+                for combo in self.combo_keys:
+                    if all(part in query for part in combo['parts']):
+                        best_key = combo['key']
+                        kb_value = self.kb_data.get(best_key)
+                        best_score = max(best_score, 0.9)
+                        break
+
+        # Special handling for combo queries like "カット＋カラー"
+        if any(sep in query for sep in ['＋', '+', '＆', '&']):
+            normalized_query = query.replace('＆', '+').replace('&', '+').replace('＋', '+')
+            parts = [part.strip() for part in normalized_query.split('+') if part.strip()]
+            if parts:
+                # 1) Try to find exact combo key first
+                combo_key = '+'.join(parts)
+                plus_combo_key = '＋'.join(parts)
+                if combo_key in self.kb_data:
+                    best_key = combo_key
+                    kb_value = self.kb_data[combo_key]
+                    best_score = max(best_score, 0.95)
+                elif plus_combo_key in self.kb_data:
+                    best_key = plus_combo_key
+                    kb_value = self.kb_data[plus_combo_key]
+                    best_score = max(best_score, 0.95)
+                else:
+                    # 2) Merge individual service answers if available
+                    merged_parts = []
+                    merged_scores = []
+                    kb_facts = {}
+                    for part in parts:
+                        part_result = self.search(part, threshold=0.2)
+                        if part_result:
+                            merged_parts.append(part_result['processed_answer'])
+                            merged_scores.append(part_result['similarity_score'])
+                            kb_facts.update(part_result.get('kb_facts', {}))
+                    if merged_parts:
+                        merged_response = "\n".join(merged_parts)
+                        best_score = max(merged_scores) if merged_scores else best_score
+                        best_key = combo_key if combo_key in self.kb_data else plus_combo_key if plus_combo_key in self.kb_data else None
+                        return {
+                            'kb_key': best_key or 'merged_combo',
+                            'similarity_score': best_score,
+                            'kb_facts': kb_facts,
+                            'category': 'メニュー・料金',
+                            'question': query,
+                            'processed_answer': merged_response
+                        }
+
+        if kb_value is not None:
+            response = self._create_response(best_key, kb_value, query)
             return {
                 'kb_key': best_key,
                 'similarity_score': best_score,
@@ -265,7 +353,7 @@ class RAGFAQ:
         elif 'クーポン' in key or '特典' in key or '割引' in key:
             return f"{key}について：{value}"
         elif 'アレルギー' in key or '妊娠' in key:
-            return f"安全のため、{value}。詳細はスタッフにお繋ぎします。"
+            return f"安全のため、{value}。直接お問い合わせください。"
         elif 'SNS' in key or 'sns' in key.lower():
             return f"SNSアカウントは「{value}」です。"
         else:

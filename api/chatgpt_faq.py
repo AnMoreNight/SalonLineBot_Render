@@ -24,8 +24,8 @@ class ChatGPTFAQ:
 【重要なルール】
 - 提供されたKB情報のみを使用して回答してください
 - 推測や憶測は禁止です
-- 医療・薬剤に関する質問は「スタッフにお繋ぎします」と回答してください
-- 不明な点は「分かりません。スタッフにお繋ぎします。」と回答してください
+- 医療・薬剤に関する質問は「直接お問い合わせください。」と回答してください
+- 不明な点は「分かりません。直接お問い合わせください。」と回答してください
 
 【回答スタイル】
 - 丁寧で親しみやすい口調
@@ -47,7 +47,7 @@ class ChatGPTFAQ:
         try:
             # Check for dangerous queries first
             if self._is_dangerous_query(user_message):
-                return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
+                return "申し訳ございませんが、その質問については分かりません。直接お問い合わせください。"
             
             # If API is not available, use fallback immediately
             if not self.api_available:
@@ -91,7 +91,7 @@ class ChatGPTFAQ:
                 for key, value in facts_dict.items():
                     return f"{value}です。"
         
-        return "申し訳ございませんが、その質問については分かりません。スタッフにお繋ぎします。"
+        return "申し訳ございませんが、その質問については分かりません。直接お問い合わせください。"
     
     def _is_dangerous_query(self, message: str) -> bool:
         """Check if query is in dangerous areas that need human guidance"""

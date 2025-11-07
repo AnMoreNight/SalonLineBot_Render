@@ -191,7 +191,13 @@ class LineNotifier:
     
     def notify_reminder_status(self, success_count: int, total_count: int, failed_reservations: List[Dict[str, Any]]) -> bool:
         """Send notification about reminder status to manager"""
-        if success_count == total_count and total_count > 0:
+        if total_count == 0:
+            # No reminders to send
+            message = f"リマインダー送信はありません"
+            
+            title = "📅 リマインダー送信"
+            
+        elif success_count == total_count and total_count > 0:
             # All reminders sent successfully
             message = f"✅ **予約リマインダー送信完了**\n\n"
             message += f"📊 **送信結果:**\n"
@@ -221,7 +227,7 @@ class LineNotifier:
             title = "⚠️ リマインダー送信結果"
             
         else:
-            # No reminders sent
+            # No reminders sent (total_count > 0 but success_count == 0)
             message = f"❌ **予約リマインダー送信失敗**\n\n"
             message += f"📊 **送信結果:**\n"
             message += f"• 送信成功: 0件\n"
@@ -247,8 +253,19 @@ class LineNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            service_info = services_data.get("services", {}).get(service_name, {})
-            return service_info.get("duration", 0)
+            services = services_data.get("services", {})
+            if not services:
+                return 0
+
+            direct = services.get(service_name)
+            if isinstance(direct, dict):
+                return direct.get("duration", 0)
+
+            for service_info in services.values():
+                if isinstance(service_info, dict) and service_info.get("name") == service_name:
+                    return service_info.get("duration", 0)
+            
+            return 0
         except Exception:
             return 0
     
@@ -262,8 +279,19 @@ class LineNotifier:
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
             
-            service_info = services_data.get("services", {}).get(service_name, {})
-            return service_info.get("price", 0)
+            services = services_data.get("services", {})
+            if not services:
+                return 0
+
+            direct = services.get(service_name)
+            if isinstance(direct, dict):
+                return direct.get("price", 0)
+
+            for service_info in services.values():
+                if isinstance(service_info, dict) and service_info.get("name") == service_name:
+                    return service_info.get("price", 0)
+            
+            return 0
         except Exception:
             return 0
     

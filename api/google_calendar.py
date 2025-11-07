@@ -225,8 +225,20 @@ class GoogleCalendarHelper:
 
     def _get_service_duration_minutes(self, service_name: str) -> int:
         """Return duration in minutes for a given service name."""
-        service_data = self.services.get(service_name, {})
-        return service_data.get("duration", 60)
+        if not service_name:
+            return 60
+
+        # Try direct lookup by service ID key
+        service_data = self.services.get(service_name)
+        if service_data and isinstance(service_data, dict):
+            return service_data.get("duration", 60)
+
+        # Fallback: search by service name field
+        for service_id, data in self.services.items():
+            if isinstance(data, dict) and data.get("name") == service_name:
+                return data.get("duration", 60)
+
+        return 60
 
     def _find_upcoming_event_by_client(self, client_name: str, days_ahead: int = 90) -> Optional[Dict[str, Any]]:
         """Find the next upcoming event for the given client name.
