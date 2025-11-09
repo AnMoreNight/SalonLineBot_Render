@@ -5,6 +5,7 @@ Sends reminder messages to users about their reservations the day before
 import os
 import json
 import logging
+import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import requests
@@ -79,7 +80,6 @@ class ReminderSystem:
                 reservation_id = description.split('予約ID:')[1].split('\n')[0].strip()
             
             # Parse summary format: "[予約] SERVICE - CLIENT (STAFF)"
-            import re
             match = re.search(r"^\[予約\] (.+) - (.+) \((.+)\)$", summary)
             if not match:
                 return None
@@ -188,20 +188,48 @@ class ReminderSystem:
             logging.error(f"Error loading kb.json: {e}")
             return {}
     
-    def _get_service_duration(self, service_name: str) -> str:
-        """Get service duration in minutes"""
+    def _get_service_duration(self, service_name: str, kb_data: Optional[Dict[str, str]] = None) -> str:
+        """Get service duration string for the given service"""
+        if not service_name:
+            return "N/A"
         try:
-            # Load services data
             current_dir = os.path.dirname(os.path.abspath(__file__))
             services_file = os.path.join(current_dir, "data", "services.json")
-            
+
             with open(services_file, 'r', encoding='utf-8') as f:
                 services_data = json.load(f)
-            
-            service_info = services_data.get("services", {}).get(service_name, {})
-            duration = service_info.get("duration", 0)
-            return f"{duration}分"
-        except Exception:
+
+            services = services_data.get("services", {})
+
+            # Direct lookup (service stored by ID)
+            direct_info = services.get(service_name)
+            if isinstance(direct_info, dict):
+                duration = direct_info.get("duration")
+                if duration:
+                    return f"{duration}分"
+
+            # Lookup by matching service name field
+            for info in services.values():
+                if isinstance(info, dict) and info.get("name") == service_name:
+                    duration = info.get("duration")
+                    if duration:
+                        return f"{duration}分"
+
+            # Fallback to KB data (e.g., combo menus stored only in KB)
+            if kb_data is None:
+                kb_data = self._load_kb_data()
+            kb_value = kb_data.get(service_name)
+            if kb_value:
+                match = re.search(r'([約\d~〜\-]+)\s*分', kb_value)
+                if match:
+                    minutes_text = match.group(1)
+                    if minutes_text.endswith('分'):
+                        return minutes_text
+                    return f"{minutes_text}分"
+
+            return "N/A"
+        except Exception as e:
+            logging.error(f"Error getting service duration for {service_name}: {e}")
             return "N/A"
     
     def send_reminder_to_user(self, reservation: Dict[str, Any], user_id: str) -> bool:
@@ -216,19 +244,34 @@ class ReminderSystem:
             start_time = reservation.get('start_time', 'N/A')
             service = reservation.get('service', 'N/A')
             staff = reservation.get('staff', 'N/A')
-            duration = self._get_service_duration(service)
+
+            # Prefer duration from reservation data if available
+            duration_display = None
+            raw_duration = reservation.get('duration') or reservation.get('duration_minutes')
+            if raw_duration:
+                if isinstance(raw_duration, (int, float)):
+                    if raw_duration > 0:
+                        duration_display = f"{int(raw_duration)}分"
+                elif isinstance(raw_duration, str):
+                    match = re.search(r'(約?\d+)', raw_duration)
+                    if match:
+                        minutes_text = match.group(1)
+                        duration_display = f"{minutes_text}分"
+
+            if not duration_display or duration_display == "0分":
+                duration_display = self._get_service_duration(service, kb_data)
+            duration = duration_display if duration_display else "N/A"
             
             # Get KB data with fallbacks
-            cancel_deadline = kb_data.get('CANCEL_POLICY', '来店の2時間前まで')
-            salon_phone = kb_data.get('PHONE', '03-1234-5678')
-            salon_name = kb_data.get('SALON_NAME', 'SalonAI 表参道店')
+            cancel_deadline = kb_data.get('キャンセル規定', '来店の2時間前まで')
+            salon_phone = kb_data.get('電話', '03-1234-5678')
+            salon_name = kb_data.get('店名', 'SalonAI 表参道店')
             
             # Prepare reminder message using the template format
             message = f"{user_name} 様\n"
             message += f"明日（{reservation_date}）{start_time} から {service}（担当：{staff}）のご予約です。\n\n"
             message += f"・所要時間：{duration}\n"
             message += f"・変更／キャンセル：変更・キャンセルされる場合は{cancel_deadline}までに「時間を変更したい」「予約をキャンセル」したいとお送りして指示に従ってください。\n\n"
-            message += f"内容の確認：\n"
             message += f"ご不明点は {salon_phone} まで。{salon_name}"
             
             # Send LINE message
