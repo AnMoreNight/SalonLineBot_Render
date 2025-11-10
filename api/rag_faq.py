@@ -124,14 +124,17 @@ class RAGFAQ:
             texts.append(text)
             self.kb_keys.append(key)
 
-            # Store combo key metadata for later detection
-            if any(sep in key for sep in ['＋', '+', '＆', '&']):
-                parts = [part.strip() for part in re.split(r'[＋+＆&]', key) if part.strip()]
-                if parts:
-                    self.combo_keys.append({'key': key, 'parts': parts})
+            # # Store combo key metadata for later detection
+            # if any(sep in key for sep in ['＋', '+', '＆', '&']):
+            #     parts = [part.strip() for part in re.split(r'[＋+＆&]', key) if part.strip()]
+            #     if parts:
+            #         self.combo_keys.append({'key': key, 'parts': parts})
         
+        print("texts: ", texts)
+
         # Generate embeddings
         embeddings = self.model.encode(texts)
+        print("embeddings: ", embeddings)
         
         # Create FAISS index
         dimension = embeddings.shape[1]
@@ -140,8 +143,9 @@ class RAGFAQ:
         # Normalize embeddings for cosine similarity
         faiss.normalize_L2(embeddings)
         self.index.add(embeddings.astype('float32'))
+        print("index: ", self.index)
     
-    def search(self, query: str, threshold: float = 0.3) -> Optional[Dict[str, Any]]:
+    def search(self, query: str, threshold: float = 0.3, depth: int = 0) -> Optional[Dict[str, Any]]:
         """
         Search using FAISS semantic similarity
         Returns None if no good match found
@@ -153,10 +157,13 @@ class RAGFAQ:
         query_embedding = self.model.encode([query])
         faiss.normalize_L2(query_embedding)
         
-        # Search for top 3 most similar results
-        k = min(3, len(self.kb_keys))
+        k = len(self.kb_keys)
         scores, indices = self.index.search(query_embedding.astype('float32'), k)
-        
+        print("scores: ", scores)
+        print("indices: ", indices)
+        print("len(indices[0]): ", len(indices[0]))
+        print("scores[0][0]: ", scores[0][0])
+
         best_idx = None
         best_key = None
         best_score = 0.0
@@ -166,139 +173,148 @@ class RAGFAQ:
             best_idx = indices[0][0]
             best_key = self.kb_keys[best_idx]
             best_score = float(scores[0][0])
+            kb_value = self.kb_data.get(best_key)
+            print("best_key: ", best_key)
+            print("kb_value: ", kb_value)
             
-            # Check if query contains specific keywords that should match certain KB keys
-            # This helps with exact keyword matching for better accuracy
-            if '住所' in query or 'どこ' in query or '場所' in query:
-                for idx, key in enumerate(self.kb_keys):
-                    if '住所' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9  # High confidence for direct keyword match
-                        break
+        #     # Check if query contains specific keywords that should match certain KB keys
+        #     # This helps with exact keyword matching for better accuracy
+        #     if '住所' in query or 'どこ' in query or '場所' in query:
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '住所' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9  # High confidence for direct keyword match
+        #                 break
             
-            if ('土日' in query or '週末' in query or '祝日' in query or '土曜' in query or '日曜' in query) and '営業時間' in query:
-                for idx, key in enumerate(self.kb_keys):
-                    if '営業時間土日祝' in key or '営業時間土日' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if ('土日' in query or '週末' in query or '祝日' in query or '土曜' in query or '日曜' in query) and '営業時間' in query:
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '営業時間土日祝' in key or '営業時間土日' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if ('変更' in query or '予約変更' in query) and 'キャンセル' not in query:
-                for idx, key in enumerate(self.kb_keys):
-                    if '変更' in key and 'キャンセル' not in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if ('変更' in query or '予約変更' in query) and 'キャンセル' not in query:
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '変更' in key and 'キャンセル' not in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if '指名料' in query or ('指名' in query and '料金' in query):
-                for idx, key in enumerate(self.kb_keys):
-                    if '指名料' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if '指名料' in query or ('指名' in query and '料金' in query):
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '指名料' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if '追加料金' in query or ('追加' in query and '料金' in query):
-                for idx, key in enumerate(self.kb_keys):
-                    if '追加料金' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if '追加料金' in query or ('追加' in query and '料金' in query):
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '追加料金' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if '紹介割' in query or ('紹介' in query and '割' in query):
-                for idx, key in enumerate(self.kb_keys):
-                    if '紹介割' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if '紹介割' in query or ('紹介' in query and '割' in query):
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '紹介割' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if '仕上がり保証' in query or ('仕上がり' in query and '保証' in query) or 'お直し' in query:
-                for idx, key in enumerate(self.kb_keys):
-                    if '仕上がり保証' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if '仕上がり保証' in query or ('仕上がり' in query and '保証' in query) or 'お直し' in query:
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '仕上がり保証' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            if ('カット' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
-                for idx, key in enumerate(self.kb_keys):
-                    if 'カット' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if ('カット' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if 'カット' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
 
-            if ('カラー' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
-                for idx, key in enumerate(self.kb_keys):
-                    if 'ダブルカラー' in key:
-                        continue
-                    if 'カラー' in key and 'カット' not in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if ('カラー' in query and ('はいくら' in query or 'いくら' in query or '何円' in query or '料金' in query or '価格' in query or '値段' in query)):
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if 'ダブルカラー' in key:
+        #                 continue
+        #             if 'カラー' in key and 'カット' not in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
 
-            if '眉カット' in query:
-                for idx, key in enumerate(self.kb_keys):
-                    if '眉カット' in key:
-                        best_idx = idx
-                        best_key = key
-                        best_score = 0.9
-                        break
+        #     if '眉カット' in query:
+        #         for idx, key in enumerate(self.kb_keys):
+        #             if '眉カット' in key:
+        #                 best_idx = idx
+        #                 best_key = key
+        #                 best_score = 0.9
+        #                 break
             
-            # Detect combo keys whose parts all appear in the query even without explicit separators
-            if not kb_value and self.combo_keys:
-                for combo in self.combo_keys:
-                    if all(part in query for part in combo['parts']):
-                        best_key = combo['key']
-                        kb_value = self.kb_data.get(best_key)
-                        best_score = max(best_score, 0.9)
-                        break
+        #     # Detect combo keys whose parts all appear in the query even without explicit separators
+        #     if self.combo_keys:
+        #         for combo in self.combo_keys:
+        #             if all(part in query for part in combo['parts']):
+        #                 best_key = combo['key']
+        #                 kb_value = self.kb_data.get(best_key)
+        #                 best_score = max(best_score, 0.95)
+        #                 break
 
-        # Special handling for combo queries like "カット＋カラー"
-        if any(sep in query for sep in ['＋', '+', '＆', '&']):
-            normalized_query = query.replace('＆', '+').replace('&', '+').replace('＋', '+')
-            parts = [part.strip() for part in normalized_query.split('+') if part.strip()]
-            if parts:
-                # 1) Try to find exact combo key first
-                combo_key = '+'.join(parts)
-                plus_combo_key = '＋'.join(parts)
-                if combo_key in self.kb_data:
-                    best_key = combo_key
-                    kb_value = self.kb_data[combo_key]
-                    best_score = max(best_score, 0.95)
-                elif plus_combo_key in self.kb_data:
-                    best_key = plus_combo_key
-                    kb_value = self.kb_data[plus_combo_key]
-                    best_score = max(best_score, 0.95)
-                else:
-                    # 2) Merge individual service answers if available
-                    merged_parts = []
-                    merged_scores = []
-                    kb_facts = {}
-                    for part in parts:
-                        part_result = self.search(part, threshold=0.2)
-                        if part_result:
-                            merged_parts.append(part_result['processed_answer'])
-                            merged_scores.append(part_result['similarity_score'])
-                            kb_facts.update(part_result.get('kb_facts', {}))
-                    if merged_parts:
-                        merged_response = "\n".join(merged_parts)
-                        best_score = max(merged_scores) if merged_scores else best_score
-                        best_key = combo_key if combo_key in self.kb_data else plus_combo_key if plus_combo_key in self.kb_data else None
-                        return {
-                            'kb_key': best_key or 'merged_combo',
-                            'similarity_score': best_score,
-                            'kb_facts': kb_facts,
-                            'category': 'メニュー・料金',
-                            'question': query,
-                            'processed_answer': merged_response
-                        }
+        # # Special handling for combo queries like "カット＋カラー"
+        # if any(sep in query for sep in ['＋', '+', '＆', '&']):
+        #     normalized_query = query.replace('＆', '+').replace('&', '+').replace('＋', '+')
+        #     parts = [part.strip() for part in normalized_query.split('+') if part.strip()]
+        #     if parts:
+        #         # 1) Try to find exact combo key first
+        #         combo_key = '+'.join(parts)
+        #         plus_combo_key = '＋'.join(parts)
+        #         if combo_key in self.kb_data and all(part in combo_key for part in parts):
+        #             best_key = combo_key
+        #             kb_value = self.kb_data[combo_key]
+        #             best_score = max(best_score, 0.95)
+        #         elif plus_combo_key in self.kb_data and all(part in plus_combo_key for part in parts):
+        #             best_key = plus_combo_key
+        #             kb_value = self.kb_data[plus_combo_key]
+        #             best_score = max(best_score, 0.95)
+        #         else:
+        #             # 2) Merge individual service answers if available
+        #             merged_parts = []
+        #             merged_scores = []
+        #             kb_facts = {}
+        #             for part in parts:
+        #                 # Avoid infinite recursion on malformed input
+        #                 if depth >= 3 or part == query:
+        #                     continue
+        #                 part_result = self.search(part, threshold=0.2, depth=depth + 1)
+        #                 if part_result:
+        #                     merged_parts.append(part_result['processed_answer'])
+        #                     merged_scores.append(part_result['similarity_score'])
+        #                     part_facts = part_result.get('kb_facts', {})
+        #                     for fact_key, fact_value in part_facts.items():
+        #                         if part in fact_key:
+        #                             kb_facts[fact_key] = fact_value
+        #             if merged_parts:
+        #                 merged_response = "\n".join(merged_parts)
+        #                 best_score = max(merged_scores) if merged_scores else best_score
+        #                 best_key = combo_key if combo_key in self.kb_data else plus_combo_key if plus_combo_key in self.kb_data else None
+        #                 return {
+        #                     'kb_key': best_key or 'merged_combo',
+        #                     'similarity_score': best_score,
+        #                     'kb_facts': kb_facts,
+        #                     'category': 'メニュー・料金',
+        #                     'question': query,
+        #                     'processed_answer': merged_response
+        #                 }
 
         if kb_value is not None:
             response = self._create_response(best_key, kb_value, query)
@@ -320,8 +336,8 @@ class RAGFAQ:
             return f"店名は「{value}」です。"
         elif '住所' in key:
             return f"住所は「{value}」です。"
-        elif '電話' in key:
-            return f"お電話は「{value}」までお願いいたします。"
+        elif '電話番号' in key:
+            return f"お電話番号は「{value}」までお願いいたします。"
         elif 'アクセス' in key:
             return f"アクセスは「{value}」です。"
         elif '営業時間平日' in key:
@@ -362,7 +378,7 @@ class RAGFAQ:
     
     def _get_category(self, key: str) -> str:
         """Get category for KB key"""
-        if '店名' in key or '住所' in key or '電話' in key:
+        if '店名' in key or '住所' in key or '電話番号' in key:
             return '基本情報'
         elif 'アクセス' in key or '駐車場' in key:
             return 'アクセス'
@@ -399,9 +415,85 @@ class RAGFAQ:
         
         return any(keyword in query for keyword in dangerous_keywords)
 
+    def _contains_key_as_standalone(self, query: str, key: str) -> bool:
+        """
+        Check if key appears in query as a standalone term or separated by typical particles,
+        preventing matches when the key is embedded within another word (e.g., 前髪カット vs カット).
+        """
+        if not key:
+            return False
+
+        normalized_query = query.replace('＋', '+').replace('＆', '&').lower()
+        normalized_key = key.replace('＋', '+').replace('＆', '&').lower()
+
+        allowed_preceding = {
+            '', ' ', '　', '、', '。', '(', '（', '[', '「', '『', '/', '-', '・', '+', '&',
+            'は', 'が', 'を', 'で', 'に', 'と', 'へ', 'も', 'や', 'の', 'より', 'から'
+        }
+
+        for match in re.finditer(re.escape(normalized_key), normalized_query):
+            idx = match.start()
+
+            if idx == 0:
+                return True
+
+            preceding_char = normalized_query[idx - 1]
+            if preceding_char in allowed_preceding:
+                return True
+
+        return False
+
+    def search_origin(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Search using original method
+        Returns None if no good match found
+        """
+        if not self.kb_data or not query:
+            return None
+
+        # Prioritize longer keys first to avoid matching generic terms before specific ones
+        kb_items = sorted(self.kb_data.items(), key=lambda item: len(item[0]), reverse=True)
+
+        for key, value in kb_items:
+            if self._contains_key_as_standalone(query, key):
+                response = self._create_response(key, value, query)
+                return {
+                    'kb_key': key,
+                    'similarity_score': 1.0,
+                    'kb_facts': {key: value},
+                    'category': self._get_category(key),
+                    'question': query,
+                    'processed_answer': response
+                }
+        return None
+        # # Normalize query for matching
+        # normalized_query = query.replace('＋', '+').replace('＆', '&').lower()
+        # normalized_query = re.sub(r'\s+', '', normalized_query)
+
+        # # Sort keys by length (desc) to match more specific entries first
+        # kb_items = sorted(self.kb_data.items(), key=lambda item: len(item[0]), reverse=True)
+
+        # for key, value in kb_items:
+        #     normalized_key = key.replace('＋', '+').replace('＆', '&').lower()
+        #     normalized_key = re.sub(r'\s+', '', normalized_key)
+
+        #     if normalized_key and normalized_key in normalized_query:
+        #         response = self._create_response(key, value, query)
+        #         return {
+        #             'kb_key': key,
+        #             'similarity_score': 1.0,
+        #             'kb_facts': {key: value},
+        #             'category': self._get_category(key),
+        #             'question': query,
+        #             'processed_answer': response
+        #         }
+
+        # return None
+    
     def get_kb_facts(self, user_message: str) -> Optional[Dict[str, Any]]:
         """
         Get KB facts only - for use by ChatGPT
         Returns None if not found in KB
         """
-        return self.search(user_message, threshold=0.3)
+        # return self.search(user_message, threshold=0.4)
+        return self.search_origin(user_message)

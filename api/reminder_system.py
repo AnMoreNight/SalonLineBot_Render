@@ -264,7 +264,7 @@ class ReminderSystem:
             
             # Get KB data with fallbacks
             cancel_deadline = kb_data.get('キャンセル規定', '来店の2時間前まで')
-            salon_phone = kb_data.get('電話', '03-1234-5678')
+            salon_phone = kb_data.get('電話番号', '03-1234-5678')
             salon_name = kb_data.get('店名', 'SalonAI 表参道店')
             
             # Prepare reminder message using the template format
